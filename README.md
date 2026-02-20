@@ -3,6 +3,10 @@
 Beanfolio is a lightweight spreadsheet app for accounting and finance students.
 It runs in the browser and in a macOS desktop shell (Electron), and can append your work to a Google Sheets archive.
 
+## Screenshot
+
+![Beanfolio app screenshot](docs/beanfolio-screenshot.png)
+
 ## What It Does
 
 - Spreadsheet grid powered by Handsontable + HyperFormula
