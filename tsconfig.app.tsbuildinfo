@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/presets.ts","./src/types.ts","./src/vite-env.d.ts","./src/lib/cellformat.ts","./src/lib/date.ts","./src/lib/grid.ts","./src/services/googleauth.ts","./src/services/googleledger.ts"],"version":"5.9.3"}
