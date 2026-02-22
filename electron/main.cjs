@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const DESKTOP_SERVER_PORT = 5180;
 const DESKTOP_SERVER_HOST = '127.0.0.1';
+const APP_DISPLAY_NAME = 'Beanfolio';
 
 const BASE_WIDTH = 500;
 const BASE_HEIGHT = 510;
@@ -14,6 +15,8 @@ const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const isDev = Boolean(DEV_SERVER_URL);
 
 let staticServer = null;
+
+app.setName(APP_DISPLAY_NAME);
 
 function createMainWindow(startUrl) {
   const window = new BrowserWindow({

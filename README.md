@@ -1,7 +1,7 @@
 # Beanfolio
 
 Beanfolio is a lightweight spreadsheet app for accounting and finance students.
-It runs in the browser and in a macOS desktop shell (Electron), and can append your work to a Google Sheets archive.
+It runs as a macOS desktop app (Electron), and can append your work to a Google Sheets archive.
 
 ## Screenshot
 
@@ -36,7 +36,7 @@ Includes common spreadsheet and accounting/finance functions, including:
 
 - React + TypeScript + Vite
 - Handsontable + HyperFormula
-- Electron (desktop mode)
+- Electron (desktop app)
 - Google Drive/Sheets APIs
 
 ## Setup
@@ -50,28 +50,40 @@ Includes common spreadsheet and accounting/finance functions, including:
    - `http://127.0.0.1:5180`
 4. Copy `.env.example` to `.env` and set `VITE_GOOGLE_CLIENT_ID`.
 
-## Run
+## Run (Desktop Dev)
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Desktop Run (macOS)
+Note: dev mode launches the Electron binary directly, so macOS may show `Electron` in the app menu.
+
+## Desktop from Built Assets
 
 ```bash
-# Vite + Electron
-npm run dev:desktop
-
-# Desktop app from built assets
 npm run desktop
+```
+
+This launches the packaged `Beanfolio.app` (menu bar name shows `Beanfolio`).
+
+## Electron Binary Run (Fast)
+
+```bash
+npm run desktop:electron
 ```
 
 ## Build
 
 ```bash
 npm run build
-npm run preview
+```
+
+## Internal Web Debug (Optional)
+
+```bash
+npm run dev:web
+npm run preview:web
 ```
 
 ## Package macOS App
