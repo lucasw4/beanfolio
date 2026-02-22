@@ -75,7 +75,7 @@ interface FormulaEditSession {
   lastReferenceInput: 'keyboard' | 'mouse' | null;
 }
 
-type ExportFormat = 'csv' | 'tsv' | 'xls';
+type ExportFormat = 'csv' | 'tsv' | 'xlsx' | 'ods';
 
 type OpenEditorContext = {
   editor: Handsontable.editors.BaseEditor & { TEXTAREA?: HTMLTextAreaElement };
@@ -646,7 +646,7 @@ function App() {
     try {
       const snapshot = trimTrailingEmptyRows(buildSnapshot(hot, activeColumnCount));
       const exportFile = buildExportFile(snapshot, format, label);
-      downloadTextFile(exportFile);
+      downloadFile(exportFile);
       setStatusMessage(`Downloaded ${exportFile.fileName}.`);
     } catch (error: unknown) {
       setErrorMessage(getErrorMessage(error));
@@ -1398,9 +1398,18 @@ function App() {
                       type="button"
                       role="menuitem"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleDownload('xls')}
+                      onClick={() => handleDownload('xlsx')}
                     >
-                      Download Excel (.xls)
+                      Download Excel (.xlsx)
+                    </button>
+                    <button
+                      className="sidebar-save-option"
+                      type="button"
+                      role="menuitem"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleDownload('ods')}
+                    >
+                      Download OpenDocument (.ods)
                     </button>
                     {accessToken ? (
                       <button
@@ -2063,9 +2072,8 @@ function trimTrailingEmptyRows(cells: CellSnapshot[][]): CellSnapshot[][] {
 
 interface ExportFile {
   fileName: string;
-  content: string;
   mimeType: string;
-  includeBom: boolean;
+  payload: Array<string | ArrayBuffer>;
 }
 
 function buildExportFile(cells: CellSnapshot[][], format: ExportFormat, label: string): ExportFile {
@@ -2075,26 +2083,31 @@ function buildExportFile(cells: CellSnapshot[][], format: ExportFormat, label: s
   if (format === 'csv') {
     return {
       fileName: `${baseName}.csv`,
-      content: serializeDelimited(cells, ','),
       mimeType: 'text/csv;charset=utf-8',
-      includeBom: true,
+      payload: [`\uFEFF${serializeDelimited(cells, ',')}`],
     };
   }
 
   if (format === 'tsv') {
     return {
       fileName: `${baseName}.tsv`,
-      content: serializeDelimited(cells, '\t'),
       mimeType: 'text/tab-separated-values;charset=utf-8',
-      includeBom: true,
+      payload: [`\uFEFF${serializeDelimited(cells, '\t')}`],
+    };
+  }
+
+  if (format === 'xlsx') {
+    return {
+      fileName: `${baseName}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      payload: [toArrayBuffer(buildXlsxWorkbookArchive(cells))],
     };
   }
 
   return {
-    fileName: `${baseName}.xls`,
-    content: serializeExcelHtml(cells),
-    mimeType: 'application/vnd.ms-excel;charset=utf-8',
-    includeBom: false,
+    fileName: `${baseName}.ods`,
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
+    payload: [toArrayBuffer(buildOdsWorkbookArchive(cells))],
   };
 }
 
@@ -2144,22 +2157,431 @@ function encodeDelimitedCell(value: string | number | boolean | null, delimiter:
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-function serializeExcelHtml(cells: CellSnapshot[][]): string {
-  const rows = cells
-    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(resolveSnapshotValue(cell) ?? ''))}</td>`).join('')}</tr>`)
-    .join('');
+function buildXlsxWorkbookArchive(cells: CellSnapshot[][]): Uint8Array {
+  const entries: ZipEntry[] = [
+    { name: '[Content_Types].xml', data: encodeUtf8(buildXlsxContentTypesXml()) },
+    { name: '_rels/.rels', data: encodeUtf8(buildXlsxRootRelationshipsXml()) },
+    { name: 'xl/workbook.xml', data: encodeUtf8(buildXlsxWorkbookXml()) },
+    { name: 'xl/_rels/workbook.xml.rels', data: encodeUtf8(buildXlsxWorkbookRelationshipsXml()) },
+    { name: 'xl/styles.xml', data: encodeUtf8(buildXlsxStylesXml()) },
+    { name: 'xl/worksheets/sheet1.xml', data: encodeUtf8(buildXlsxSheetXml(cells)) },
+  ];
 
+  return createZipArchive(entries);
+}
+
+function buildXlsxContentTypesXml(): string {
   return [
-    '<html>',
-    '<head><meta charset="utf-8" /></head>',
-    '<body><table>',
-    rows,
-    '</table></body>',
-    '</html>',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>',
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
+    '</Types>',
   ].join('');
 }
 
-function escapeHtml(value: string): string {
+function buildXlsxRootRelationshipsXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>',
+    '</Relationships>',
+  ].join('');
+}
+
+function buildXlsxWorkbookXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+    '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>',
+    '</workbook>',
+  ].join('');
+}
+
+function buildXlsxWorkbookRelationshipsXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>',
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
+    '</Relationships>',
+  ].join('');
+}
+
+function buildXlsxStylesXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+    '<fonts count="1"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>',
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>',
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>',
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
+    '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>',
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
+    '</styleSheet>',
+  ].join('');
+}
+
+function buildXlsxSheetXml(cells: CellSnapshot[][]): string {
+  const rows = cells
+    .map((row, rowIndex) => buildXlsxRowXml(row, rowIndex))
+    .join('');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+    `<sheetData>${rows}</sheetData>`,
+    '</worksheet>',
+  ].join('');
+}
+
+function buildXlsxRowXml(row: CellSnapshot[], rowIndex: number): string {
+  const cellsXml = row
+    .map((cell, columnIndex) => buildXlsxCellXml(cell, rowIndex, columnIndex))
+    .filter((item) => item.length > 0)
+    .join('');
+
+  if (cellsXml.length === 0) {
+    return `<row r="${rowIndex + 1}"/>`;
+  }
+
+  return `<row r="${rowIndex + 1}">${cellsXml}</row>`;
+}
+
+function buildXlsxCellXml(cell: CellSnapshot, rowIndex: number, columnIndex: number): string {
+  const cellRef = `${columnToLetters(columnIndex)}${rowIndex + 1}`;
+
+  if (cell.formula) {
+    const formula = cell.formula.trim().replace(/^=/, '');
+    if (formula.length === 0) {
+      return '';
+    }
+
+    return `<c r="${cellRef}"><f>${escapeXml(formula)}</f></c>`;
+  }
+
+  const value = cell.displayValue;
+  if (value === null) {
+    return '';
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return '';
+    }
+
+    return `<c r="${cellRef}"><v>${value}</v></c>`;
+  }
+
+  if (typeof value === 'boolean') {
+    return `<c r="${cellRef}" t="b"><v>${value ? 1 : 0}</v></c>`;
+  }
+
+  const preserveSpace = shouldPreserveXmlSpace(value);
+  const spaceAttr = preserveSpace ? ' xml:space="preserve"' : '';
+  return `<c r="${cellRef}" t="inlineStr"><is><t${spaceAttr}>${escapeXml(value)}</t></is></c>`;
+}
+
+function buildOdsWorkbookArchive(cells: CellSnapshot[][]): Uint8Array {
+  const entries: ZipEntry[] = [
+    { name: 'mimetype', data: encodeUtf8('application/vnd.oasis.opendocument.spreadsheet') },
+    { name: 'content.xml', data: encodeUtf8(buildOdsContentXml(cells)) },
+    { name: 'styles.xml', data: encodeUtf8(buildOdsStylesXml()) },
+    { name: 'meta.xml', data: encodeUtf8(buildOdsMetaXml()) },
+    { name: 'settings.xml', data: encodeUtf8(buildOdsSettingsXml()) },
+    { name: 'META-INF/manifest.xml', data: encodeUtf8(buildOdsManifestXml()) },
+  ];
+
+  return createZipArchive(entries);
+}
+
+function buildOdsContentXml(cells: CellSnapshot[][]): string {
+  const rows = cells.map((row) => buildOdsRowXml(row)).join('');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<office:document-content',
+    ' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
+    ' xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"',
+    ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"',
+    ' office:version="1.2">',
+    '<office:body><office:spreadsheet><table:table table:name="Sheet1">',
+    rows,
+    '</table:table></office:spreadsheet></office:body>',
+    '</office:document-content>',
+  ].join('');
+}
+
+function buildOdsRowXml(row: CellSnapshot[]): string {
+  const rowCells = row.map((cell) => buildOdsCellXml(cell)).join('');
+  return `<table:table-row>${rowCells}</table:table-row>`;
+}
+
+function buildOdsCellXml(cell: CellSnapshot): string {
+  const value = resolveSnapshotValue(cell);
+
+  if (value === null) {
+    return '<table:table-cell/>';
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return '<table:table-cell/>';
+    }
+
+    return `<table:table-cell office:value-type="float" office:value="${value}"><text:p>${escapeXml(String(value))}</text:p></table:table-cell>`;
+  }
+
+  if (typeof value === 'boolean') {
+    const normalized = value ? 'true' : 'false';
+    return `<table:table-cell office:value-type="boolean" office:boolean-value="${normalized}"><text:p>${value ? 'TRUE' : 'FALSE'}</text:p></table:table-cell>`;
+  }
+
+  return `<table:table-cell office:value-type="string"><text:p>${escapeXml(value)}</text:p></table:table-cell>`;
+}
+
+function buildOdsStylesXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2">',
+    '<office:styles/>',
+    '</office:document-styles>',
+  ].join('');
+}
+
+function buildOdsMetaXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2">',
+    '<office:meta/>',
+    '</office:document-meta>',
+  ].join('');
+}
+
+function buildOdsSettingsXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<office:document-settings xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2">',
+    '<office:settings/>',
+    '</office:document-settings>',
+  ].join('');
+}
+
+function buildOdsManifestXml(): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">',
+    '<manifest:file-entry manifest:media-type="application/vnd.oasis.opendocument.spreadsheet" manifest:full-path="/"/>',
+    '<manifest:file-entry manifest:media-type="text/xml" manifest:full-path="content.xml"/>',
+    '<manifest:file-entry manifest:media-type="text/xml" manifest:full-path="styles.xml"/>',
+    '<manifest:file-entry manifest:media-type="text/xml" manifest:full-path="meta.xml"/>',
+    '<manifest:file-entry manifest:media-type="text/xml" manifest:full-path="settings.xml"/>',
+    '</manifest:manifest>',
+  ].join('');
+}
+
+interface ZipEntry {
+  name: string;
+  data: Uint8Array;
+}
+
+const UTF8_ENCODER = new TextEncoder();
+
+function encodeUtf8(value: string): Uint8Array {
+  return UTF8_ENCODER.encode(value);
+}
+
+function createZipArchive(entries: ZipEntry[]): Uint8Array {
+  const localChunks: Uint8Array[] = [];
+  const centralChunks: Uint8Array[] = [];
+  const centralDirectoryEntries: Array<{
+    nameBytes: Uint8Array;
+    crc32: number;
+    size: number;
+    localOffset: number;
+  }> = [];
+
+  const timestamp = new Date();
+  const dosTime = toDosTime(timestamp);
+  const dosDate = toDosDate(timestamp);
+  let offset = 0;
+
+  entries.forEach((entry) => {
+    const nameBytes = encodeUtf8(entry.name);
+    const size = entry.data.length;
+    const crc = crc32(entry.data);
+    const localHeader = buildZipLocalFileHeader(nameBytes.length, crc, size, dosTime, dosDate);
+
+    localChunks.push(localHeader, nameBytes, entry.data);
+    centralDirectoryEntries.push({
+      nameBytes,
+      crc32: crc,
+      size,
+      localOffset: offset,
+    });
+
+    offset += localHeader.length + nameBytes.length + size;
+  });
+
+  let centralDirectorySize = 0;
+  centralDirectoryEntries.forEach((entry) => {
+    const centralHeader = buildZipCentralDirectoryHeader(
+      entry.nameBytes.length,
+      entry.crc32,
+      entry.size,
+      dosTime,
+      dosDate,
+      entry.localOffset,
+    );
+
+    centralChunks.push(centralHeader, entry.nameBytes);
+    centralDirectorySize += centralHeader.length + entry.nameBytes.length;
+  });
+
+  const endOfCentralDirectory = buildZipEndOfCentralDirectoryRecord(
+    entries.length,
+    centralDirectorySize,
+    offset,
+  );
+
+  return concatUint8Arrays([...localChunks, ...centralChunks, endOfCentralDirectory]);
+}
+
+function buildZipLocalFileHeader(
+  fileNameLength: number,
+  crc: number,
+  size: number,
+  dosTime: number,
+  dosDate: number,
+): Uint8Array {
+  const buffer = new Uint8Array(30);
+  const view = new DataView(buffer.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, dosTime, true);
+  view.setUint16(12, dosDate, true);
+  view.setUint32(14, crc >>> 0, true);
+  view.setUint32(18, size, true);
+  view.setUint32(22, size, true);
+  view.setUint16(26, fileNameLength, true);
+  view.setUint16(28, 0, true);
+  return buffer;
+}
+
+function buildZipCentralDirectoryHeader(
+  fileNameLength: number,
+  crc: number,
+  size: number,
+  dosTime: number,
+  dosDate: number,
+  localOffset: number,
+): Uint8Array {
+  const buffer = new Uint8Array(46);
+  const view = new DataView(buffer.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 20, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, dosTime, true);
+  view.setUint16(14, dosDate, true);
+  view.setUint32(16, crc >>> 0, true);
+  view.setUint32(20, size, true);
+  view.setUint32(24, size, true);
+  view.setUint16(28, fileNameLength, true);
+  view.setUint16(30, 0, true);
+  view.setUint16(32, 0, true);
+  view.setUint16(34, 0, true);
+  view.setUint16(36, 0, true);
+  view.setUint32(38, 0, true);
+  view.setUint32(42, localOffset, true);
+  return buffer;
+}
+
+function buildZipEndOfCentralDirectoryRecord(
+  entryCount: number,
+  centralDirectorySize: number,
+  centralDirectoryOffset: number,
+): Uint8Array {
+  const buffer = new Uint8Array(22);
+  const view = new DataView(buffer.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(4, 0, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, entryCount, true);
+  view.setUint16(10, entryCount, true);
+  view.setUint32(12, centralDirectorySize, true);
+  view.setUint32(16, centralDirectoryOffset, true);
+  view.setUint16(20, 0, true);
+  return buffer;
+}
+
+function concatUint8Arrays(chunks: Uint8Array[]): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
+
+  chunks.forEach((chunk) => {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  });
+
+  return merged;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+function toDosTime(date: Date): number {
+  const seconds = Math.floor(date.getSeconds() / 2);
+  return ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | (seconds & 0x1f);
+}
+
+function toDosDate(date: Date): number {
+  const year = Math.max(date.getFullYear(), 1980);
+  return (((year - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f);
+}
+
+const CRC32_TABLE = buildCrc32Table();
+
+function buildCrc32Table(): Uint32Array {
+  const table = new Uint32Array(256);
+
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) === 1 ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    }
+    table[index] = value >>> 0;
+  }
+
+  return table;
+}
+
+function crc32(data: Uint8Array): number {
+  let checksum = 0xffffffff;
+
+  for (let index = 0; index < data.length; index += 1) {
+    const tableIndex = (checksum ^ data[index]) & 0xff;
+    checksum = (checksum >>> 8) ^ CRC32_TABLE[tableIndex];
+  }
+
+  return (checksum ^ 0xffffffff) >>> 0;
+}
+
+function shouldPreserveXmlSpace(value: string): boolean {
+  return value.trim() !== value || /[\n\r\t]| {2,}/.test(value);
+}
+
+function escapeXml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -2168,9 +2590,8 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function downloadTextFile(file: ExportFile): void {
-  const payload = file.includeBom ? `\uFEFF${file.content}` : file.content;
-  const blob = new Blob([payload], { type: file.mimeType });
+function downloadFile(file: ExportFile): void {
+  const blob = new Blob(file.payload, { type: file.mimeType });
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
