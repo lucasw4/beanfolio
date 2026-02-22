@@ -399,7 +399,7 @@
   border-radius: 10px;
   -webkit-app-region: no-drag;
   overflow: hidden;
-  will-change: transform, opacity;
+  will-change: transform, opacity, flex-basis;
   transition:
     flex-basis 0.25s cubic-bezier(0.3, 0, 0, 1),
     opacity 0.12s linear,
@@ -932,7 +932,8 @@
   .sidebar-toggle-line,
   .app-body,
   .sidebar,
-  .sidebar-save-menu {
+  .sidebar-save-menu,
+  .sidebar-save-split {
     transition: none !important;
   }
 }

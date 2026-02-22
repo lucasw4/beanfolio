@@ -355,6 +355,8 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!colorPickerTarget && !roundPopupOpen && !presetMenuVisible && !saveMenuVisible) return;
+
     const handleClick = (e: MouseEvent) => {
       if (colorPickerTarget && colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
         setColorPickerTarget(null);
@@ -375,7 +377,6 @@ function App() {
 
   useEffect(() => {
     if (presetMenuOpen) {
-      setPresetMenuVisible(true);
       return;
     }
 
@@ -385,7 +386,6 @@ function App() {
 
   useEffect(() => {
     if (saveMenuOpen) {
-      setSaveMenuVisible(true);
       return;
     }
 
@@ -757,7 +757,7 @@ function App() {
     window.requestAnimationFrame(refreshFormulaPopup);
   }, []);
 
-  const handleBeforeKeyDown: NonNullable<Handsontable.GridSettings['beforeKeyDown']> = (event) => {
+  const handleBeforeKeyDown = useCallback<NonNullable<Handsontable.GridSettings['beforeKeyDown']>>((event) => {
     const hot = getHotInstance(hotRef);
     if (!hot) {
       return;
@@ -803,9 +803,9 @@ function App() {
     }
 
     window.requestAnimationFrame(refreshFormulaPopup);
-  };
+  }, [activeColumnCount]);
 
-  const handleBeforeOnCellMouseDown: NonNullable<Handsontable.GridSettings['beforeOnCellMouseDown']> = (
+  const handleBeforeOnCellMouseDown = useCallback<NonNullable<Handsontable.GridSettings['beforeOnCellMouseDown']>>((
     event,
     coords,
     _td,
@@ -846,9 +846,9 @@ function App() {
     editorContext.editor.focus();
     hot.listen();
     window.requestAnimationFrame(refreshFormulaPopup);
-  };
+  }, [activeColumnCount]);
 
-  const handleBeforeRenderer: NonNullable<Handsontable.GridSettings['beforeRenderer']> = (
+  const handleBeforeRenderer = useCallback<NonNullable<Handsontable.GridSettings['beforeRenderer']>>((
     td,
     row,
     column,
@@ -916,7 +916,7 @@ function App() {
     td.style.textDecoration = style?.underline ? 'underline' : '';
     td.style.backgroundColor = style?.fillColor ?? '';
     td.style.color = style?.textColor ?? '';
-  };
+  }, [selectedPreset]);
 
   const handleAfterRenderer = useCallback((
     td: HTMLTableCellElement,
@@ -2550,7 +2550,11 @@ function toDosDate(date: Date): number {
   return (((year - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f);
 }
 
-const CRC32_TABLE = buildCrc32Table();
+let _crc32Table: Uint32Array | null = null;
+
+function getCrc32Table(): Uint32Array {
+  return (_crc32Table ??= buildCrc32Table());
+}
 
 function buildCrc32Table(): Uint32Array {
   const table = new Uint32Array(256);
@@ -2567,11 +2571,12 @@ function buildCrc32Table(): Uint32Array {
 }
 
 function crc32(data: Uint8Array): number {
+  const table = getCrc32Table();
   let checksum = 0xffffffff;
 
   for (let index = 0; index < data.length; index += 1) {
     const tableIndex = (checksum ^ data[index]) & 0xff;
-    checksum = (checksum >>> 8) ^ CRC32_TABLE[tableIndex];
+    checksum = (checksum >>> 8) ^ table[tableIndex];
   }
 
   return (checksum ^ 0xffffffff) >>> 0;
