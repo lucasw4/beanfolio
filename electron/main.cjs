@@ -25,6 +25,7 @@ function createMainWindow(startUrl) {
     minWidth: BASE_WIDTH,
     minHeight: 400,
     title: 'Beanfolio',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: 'hiddenInset',
     transparent: true,
     backgroundColor: '#00000000',

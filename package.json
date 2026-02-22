@@ -51,8 +51,10 @@
       "electron/**/*",
       "package.json"
     ],
+    "icon": "build/icon.icns",
     "mac": {
       "category": "public.app-category.finance",
+      "icon": "build/icon.icns",
       "target": [
         "dmg",
         "zip"
