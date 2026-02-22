@@ -8,6 +8,7 @@ declare global {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
+            ux_mode?: 'popup' | 'redirect';
             callback: (response: TokenResponse) => void;
             error_callback?: (error: { type: string }) => void;
           }) => TokenClient;
@@ -102,6 +103,7 @@ export async function requestGoogleAccessToken(params: {
     const tokenClient = window.google!.accounts.oauth2.initTokenClient({
       client_id: params.clientId,
       scope: params.scopes.join(' '),
+      ux_mode: 'popup',
       callback: (response) => {
         if (response.error || !response.access_token) {
           reject(new Error(response.error_description ?? response.error ?? 'OAuth token request failed.'));
@@ -110,7 +112,19 @@ export async function requestGoogleAccessToken(params: {
 
         resolve(response.access_token);
       },
-      error_callback: () => reject(new Error('OAuth request was cancelled or blocked.')),
+      error_callback: (error) => {
+        if (error.type === 'popup_closed') {
+          reject(new Error('OAuth sign-in window was closed before completion.'));
+          return;
+        }
+
+        if (error.type === 'popup_failed_to_open') {
+          reject(new Error('OAuth sign-in popup failed to open.'));
+          return;
+        }
+
+        reject(new Error(`OAuth request failed (${error.type}).`));
+      },
     });
 
     tokenClient.requestAccessToken({ prompt: params.prompt ?? 'consent' });

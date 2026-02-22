@@ -3,7 +3,8 @@ import type { CellSnapshot, GridCellValue, LedgerTarget, SaveRequest } from '../
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-const LEDGER_FILE_NAME = 'Beanfolio';
+const LEDGER_FILE_NAMES = ['Beanfolio', 'Mini Ledger'] as const;
+const PRIMARY_LEDGER_FILE_NAME = LEDGER_FILE_NAMES[0];
 const ARCHIVE_SHEET_NAME = 'Archive';
 const BLANK_GAP_ROWS = 4;
 
@@ -88,8 +89,12 @@ export async function appendLedgerBlock(
 }
 
 async function findMostRecentlyModifiedLedger(accessToken: string): Promise<DriveFile | null> {
+  const nameQuery = LEDGER_FILE_NAMES
+    .map((name) => `name = '${name.replace(/'/g, "\\'")}'`)
+    .join(' or ');
+
   const query = [
-    `name = '${LEDGER_FILE_NAME.replace(/'/g, "\\'")}'`,
+    `(${nameQuery})`,
     `mimeType = 'application/vnd.google-apps.spreadsheet'`,
     'trashed = false',
   ].join(' and ');
@@ -177,7 +182,7 @@ async function createMiniLedger(accessToken: string): Promise<LedgerTarget> {
     method: 'POST',
     body: JSON.stringify({
       properties: {
-        title: LEDGER_FILE_NAME,
+        title: PRIMARY_LEDGER_FILE_NAME,
       },
       sheets: [
         {

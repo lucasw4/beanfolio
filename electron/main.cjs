@@ -36,6 +36,25 @@ function createMainWindow(startUrl) {
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isGoogleAuthUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 540,
+          height: 700,
+          minWidth: 440,
+          minHeight: 560,
+          autoHideMenuBar: true,
+          title: 'Google Sign-In',
+          webPreferences: {
+            sandbox: true,
+            nodeIntegration: false,
+            contextIsolation: true,
+          },
+        },
+      };
+    }
+
     if (isExternalHttpUrl(url)) {
       shell.openExternal(url);
       return { action: 'deny' };
@@ -156,6 +175,25 @@ function getContentType(extension) {
 
 function isExternalHttpUrl(url) {
   return /^https?:\/\//i.test(url);
+}
+
+function isGoogleAuthUrl(url) {
+  if (!isExternalHttpUrl(url)) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === 'accounts.google.com'
+      || host.endsWith('.accounts.google.com')
+      || host === 'oauth2.googleapis.com'
+      || host.endsWith('.oauth2.googleapis.com')
+    );
+  } catch {
+    return false;
+  }
 }
 
 app.on('window-all-closed', () => {

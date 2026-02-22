@@ -40,6 +40,7 @@ const GOOGLE_SCOPES = [
 ] as const;
 
 const ROW_HEADER_WIDTH = 34;
+const DROPDOWN_TRANSITION_MS = 220;
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -73,6 +74,8 @@ interface FormulaEditSession {
   pendingReferenceRange: { start: number; end: number } | null;
   lastReferenceInput: 'keyboard' | 'mouse' | null;
 }
+
+type ExportFormat = 'csv' | 'tsv' | 'xls';
 
 type OpenEditorContext = {
   editor: Handsontable.editors.BaseEditor & { TEXTAREA?: HTMLTextAreaElement };
@@ -246,6 +249,11 @@ const FORMULA_DOCS: FormulaDoc[] = [
 ];
 
 const FORMULA_DOC_BY_NAME = new Map(FORMULA_DOCS.map((doc) => [doc.name, doc]));
+const PRESET_OPTIONS: Array<{ value: PresetType; label: string }> = [
+  { value: 'blank', label: 'Blank' },
+  { value: 'journal_entry', label: 'Journal Entry' },
+  { value: 't_account', label: 'T-Account' },
+];
 
 function App() {
   const hotRef = useRef<any>(null);
@@ -275,9 +283,61 @@ function App() {
   const [fillPaletteLightness, setFillPaletteLightness] = useState(1);
   const [textPaletteLightness, setTextPaletteLightness] = useState(-1);
   const [roundPopupOpen, setRoundPopupOpen] = useState(false);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+  const [presetMenuVisible, setPresetMenuVisible] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const [saveMenuVisible, setSaveMenuVisible] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const roundPopupRef = useRef<HTMLDivElement>(null);
+  const presetMenuRef = useRef<HTMLDivElement>(null);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
   const savedSelectionRef = useRef<Array<[number, number, number, number]>>([]);
+
+  const closePresetMenu = useCallback(() => {
+    setPresetMenuOpen(false);
+  }, []);
+
+  const openPresetMenu = useCallback(() => {
+    setPresetMenuVisible(true);
+    setPresetMenuOpen(true);
+  }, []);
+
+  const togglePresetMenu = useCallback(() => {
+    if (presetMenuOpen) {
+      closePresetMenu();
+      return;
+    }
+
+    if (!presetMenuVisible) {
+      openPresetMenu();
+      return;
+    }
+
+    setPresetMenuOpen(true);
+  }, [closePresetMenu, openPresetMenu, presetMenuOpen, presetMenuVisible]);
+
+  const closeSaveMenu = useCallback(() => {
+    setSaveMenuOpen(false);
+  }, []);
+
+  const openSaveMenu = useCallback(() => {
+    setSaveMenuVisible(true);
+    setSaveMenuOpen(true);
+  }, []);
+
+  const toggleSaveMenu = useCallback(() => {
+    if (saveMenuOpen) {
+      closeSaveMenu();
+      return;
+    }
+
+    if (!saveMenuVisible) {
+      openSaveMenu();
+      return;
+    }
+
+    setSaveMenuOpen(true);
+  }, [closeSaveMenu, openSaveMenu, saveMenuOpen, saveMenuVisible]);
 
   const activeColumnCount = useMemo(() => getPresetColumnCount(selectedPreset), [selectedPreset]);
   const columnHeaders = useMemo(() => getPresetColumnHeaders(selectedPreset), [selectedPreset]);
@@ -302,10 +362,36 @@ function App() {
       if (roundPopupOpen && roundPopupRef.current && !roundPopupRef.current.contains(e.target as Node)) {
         setRoundPopupOpen(false);
       }
+      if (presetMenuVisible && presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
+        closePresetMenu();
+      }
+      if (saveMenuVisible && saveMenuRef.current && !saveMenuRef.current.contains(e.target as Node)) {
+        closeSaveMenu();
+      }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [colorPickerTarget, roundPopupOpen]);
+  }, [closePresetMenu, closeSaveMenu, colorPickerTarget, presetMenuVisible, roundPopupOpen, saveMenuVisible]);
+
+  useEffect(() => {
+    if (presetMenuOpen) {
+      setPresetMenuVisible(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setPresetMenuVisible(false), DROPDOWN_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [presetMenuOpen]);
+
+  useEffect(() => {
+    if (saveMenuOpen) {
+      setSaveMenuVisible(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSaveMenuVisible(false), DROPDOWN_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [saveMenuOpen]);
 
   const getSelectedRanges = useCallback((): Array<[number, number, number, number]> => {
     return savedSelectionRef.current;
@@ -545,6 +631,37 @@ function App() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDownload = (format: ExportFormat) => {
+    setErrorMessage(null);
+    closeSaveMenu();
+
+    const hot = getHotInstance(hotRef);
+    if (!hot) {
+      setErrorMessage('Grid is not ready yet.');
+      return;
+    }
+
+    try {
+      const snapshot = trimTrailingEmptyRows(buildSnapshot(hot, activeColumnCount));
+      const exportFile = buildExportFile(snapshot, format, label);
+      downloadTextFile(exportFile);
+      setStatusMessage(`Downloaded ${exportFile.fileName}.`);
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error));
+      setStatusMessage('Download failed.');
+    }
+  };
+
+  const handleSaveMainClick = () => {
+    closeSaveMenu();
+    if (!accessToken || !ledgerTarget) {
+      void handleSignIn();
+      return;
+    }
+
+    void handleSave();
   };
 
   const refreshFormulaPopup = () => {
@@ -837,6 +954,8 @@ function App() {
   const toggleSidebar = () => {
     const next = !sidebarOpen;
     setSidebarOpen(next);
+    closePresetMenu();
+    closeSaveMenu();
     (window as any).beanfolioDesktop?.setSidebarOpen?.(next);
   };
 
@@ -902,8 +1021,8 @@ function App() {
               onClick={() => setColorPickerTarget(colorPickerTarget === 'fill' ? null : 'fill')}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <rect x="1" y="10" width="12" height="3" rx="0.5" fill="currentColor" opacity="0.7" />
-                <path d="M7 1.5L3 8.5h8L7 1.5z" fill="currentColor" opacity="0.5" />
+                <rect x="1" y="10" width="12" height="3" rx="0.5" fill="currentColor" />
+                <path d="M7 1.5L3 8.5h8L7 1.5z" fill="currentColor" />
               </svg>
             </button>
             {colorPickerTarget === 'fill' ? (
@@ -975,8 +1094,8 @@ function App() {
               onClick={() => setColorPickerTarget(colorPickerTarget === 'text' ? null : 'text')}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <rect x="1" y="11" width="12" height="2" rx="0.5" fill="currentColor" opacity="0.7" />
-                <text x="7" y="9.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor" opacity="0.6">A</text>
+                <rect x="1" y="11" width="12" height="2" rx="0.5" fill="currentColor" />
+                <text x="7" y="9.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor">A</text>
               </svg>
             </button>
             {colorPickerTarget === 'text' ? (
@@ -1119,46 +1238,49 @@ function App() {
         <aside id="app-sidebar" className={sidebarOpen ? 'sidebar is-open' : 'sidebar'} aria-hidden={!sidebarOpen}>
             <div className="sidebar-controls">
               <div className="sidebar-top-row">
-                <button
-                  className="google-auth-btn"
-                  type="button"
-                  onClick={accessToken ? handleSignOut : handleSignIn}
-                  disabled={isSigningIn || !isAuthReady}
-                  title={accessToken ? 'Sign out' : isSigningIn ? 'Signing in...' : 'Sign in with Google'}
-                >
-                  {isSigningIn ? (
-                    <span className="google-auth-spinner" />
-                  ) : accessToken ? (
-                    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-                      <line x1="4" y1="4" x2="14" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                      <line x1="14" y1="4" x2="4" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                      <path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.0 24.0 0 0 0 0 21.56l7.98-6.19z"/>
-                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                      <path fill="none" d="M0 0h48v48H0z"/>
-                    </svg>
-                  )}
-                </button>
-
                 <div className="sidebar-field">
                   <span className="label">Preset</span>
-                  <select
-                    id="preset-select"
-                    className="input sidebar-input"
-                    value={selectedPreset}
-                    onChange={(event) => {
-                      const value = event.target.value as PresetType;
-                      handlePresetSelect(value);
-                    }}
-                  >
-                    <option value="blank">Blank</option>
-                    <option value="journal_entry">Journal Entry</option>
-                    <option value="t_account">T-Account</option>
-                  </select>
+                  <div className="sidebar-preset" ref={presetMenuRef}>
+                    <button
+                      id="preset-select"
+                      className={presetMenuOpen ? 'input sidebar-input sidebar-preset-trigger is-open' : 'input sidebar-input sidebar-preset-trigger'}
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={presetMenuOpen}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={togglePresetMenu}
+                    >
+                      <span>{getPresetOptionLabel(selectedPreset)}</span>
+                      <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                        <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+
+                    {presetMenuVisible ? (
+                      <div
+                        className={presetMenuOpen ? 'sidebar-save-menu sidebar-preset-menu is-open' : 'sidebar-save-menu sidebar-preset-menu is-closing'}
+                        role="menu"
+                        aria-label="Preset options"
+                      >
+                        {PRESET_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            className={option.value === selectedPreset ? 'sidebar-save-option sidebar-preset-option is-selected' : 'sidebar-save-option sidebar-preset-option'}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={option.value === selectedPreset}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              closePresetMenu();
+                              handlePresetSelect(option.value);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -1212,14 +1334,91 @@ function App() {
                 </div>
               </div>
 
-              <button
-                className="button button-primary sidebar-button"
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving || !accessToken || !ledgerTarget}
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
+              <div className="sidebar-save" ref={saveMenuRef}>
+                <div className={saveMenuOpen ? 'sidebar-save-split is-open' : 'sidebar-save-split'}>
+                  <button
+                    className="sidebar-save-main"
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={handleSaveMainClick}
+                    disabled={isSaving || isSigningIn || ((!accessToken || !ledgerTarget) && !isAuthReady)}
+                  >
+                    <span className="sidebar-save-main-content">
+                      <svg className="sidebar-save-google-icon" width="14" height="14" viewBox="0 0 48 48" aria-hidden="true">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.0 24.0 0 0 0 0 21.56l7.98-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                      </svg>
+                      <span>{isSigningIn ? 'Connecting...' : !accessToken || !ledgerTarget ? 'Connect to Sync' : isSaving ? 'Saving...' : 'Save & Download'}</span>
+                    </span>
+                  </button>
+                  <button
+                    className="sidebar-save-caret"
+                    type="button"
+                    title="Download options"
+                    aria-label="Open download options"
+                    aria-haspopup="menu"
+                    aria-expanded={saveMenuOpen}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={toggleSaveMenu}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                      <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+
+                {saveMenuVisible ? (
+                  <div
+                    className={saveMenuOpen ? 'sidebar-save-menu is-open' : 'sidebar-save-menu is-closing'}
+                    role="menu"
+                    aria-label="Download as"
+                  >
+                    <button
+                      className="sidebar-save-option"
+                      type="button"
+                      role="menuitem"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleDownload('csv')}
+                    >
+                      Download CSV (.csv)
+                    </button>
+                    <button
+                      className="sidebar-save-option"
+                      type="button"
+                      role="menuitem"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleDownload('tsv')}
+                    >
+                      Download TSV (.tsv)
+                    </button>
+                    <button
+                      className="sidebar-save-option"
+                      type="button"
+                      role="menuitem"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleDownload('xls')}
+                    >
+                      Download Excel (.xls)
+                    </button>
+                    {accessToken ? (
+                      <button
+                        className="sidebar-save-option"
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          closeSaveMenu();
+                          void handleSignOut();
+                        }}
+                      >
+                        Disconnect Google
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <footer className="sidebar-footer">
@@ -1832,6 +2031,11 @@ function formatFormulaSignature(doc: FormulaDoc): string {
   return `${doc.name}(${doc.params.join(', ')})`;
 }
 
+function getPresetOptionLabel(preset: PresetType): string {
+  const option = PRESET_OPTIONS.find((item) => item.value === preset);
+  return option?.label ?? 'Preset';
+}
+
 function buildSnapshot(hot: Handsontable, columnCount: number): CellSnapshot[][] {
   return Array.from({ length: GRID_ROWS }, (_, rowIndex) =>
     Array.from({ length: columnCount }, (_, columnIndex) => {
@@ -1855,6 +2059,127 @@ function trimTrailingEmptyRows(cells: CellSnapshot[][]): CellSnapshot[][] {
   }
 
   return [];
+}
+
+interface ExportFile {
+  fileName: string;
+  content: string;
+  mimeType: string;
+  includeBom: boolean;
+}
+
+function buildExportFile(cells: CellSnapshot[][], format: ExportFormat, label: string): ExportFile {
+  const preparedLabel = sanitizeFileName(label);
+  const baseName = preparedLabel.length > 0 ? preparedLabel : `beanfolio-${new Date().toISOString().replace(/[:]/g, '-').slice(0, 19)}`;
+
+  if (format === 'csv') {
+    return {
+      fileName: `${baseName}.csv`,
+      content: serializeDelimited(cells, ','),
+      mimeType: 'text/csv;charset=utf-8',
+      includeBom: true,
+    };
+  }
+
+  if (format === 'tsv') {
+    return {
+      fileName: `${baseName}.tsv`,
+      content: serializeDelimited(cells, '\t'),
+      mimeType: 'text/tab-separated-values;charset=utf-8',
+      includeBom: true,
+    };
+  }
+
+  return {
+    fileName: `${baseName}.xls`,
+    content: serializeExcelHtml(cells),
+    mimeType: 'application/vnd.ms-excel;charset=utf-8',
+    includeBom: false,
+  };
+}
+
+function sanitizeFileName(input: string): string {
+  return input
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[.\s]+$/g, '')
+    .slice(0, 80);
+}
+
+function serializeDelimited(cells: CellSnapshot[][], delimiter: string): string {
+  return cells
+    .map((row) => row.map((cell) => encodeDelimitedCell(resolveSnapshotValue(cell), delimiter)).join(delimiter))
+    .join('\r\n');
+}
+
+function resolveSnapshotValue(cell: CellSnapshot): string | number | boolean | null {
+  if (cell.formula) {
+    return cell.formula;
+  }
+
+  return cell.displayValue;
+}
+
+function encodeDelimitedCell(value: string | number | boolean | null, delimiter: string): string {
+  if (value === null) {
+    return '';
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  const needsQuoting =
+    value.includes('"')
+    || value.includes('\n')
+    || value.includes('\r')
+    || value.includes(delimiter)
+    || value.trim() !== value;
+
+  if (!needsQuoting) {
+    return value;
+  }
+
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function serializeExcelHtml(cells: CellSnapshot[][]): string {
+  const rows = cells
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(resolveSnapshotValue(cell) ?? ''))}</td>`).join('')}</tr>`)
+    .join('');
+
+  return [
+    '<html>',
+    '<head><meta charset="utf-8" /></head>',
+    '<body><table>',
+    rows,
+    '</table></body>',
+    '</html>',
+  ].join('');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function downloadTextFile(file: ExportFile): void {
+  const payload = file.includeBom ? `\uFEFF${file.content}` : file.content;
+  const blob = new Blob([payload], { type: file.mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = file.fileName;
+  anchor.style.display = 'none';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
 }
 
 function getErrorMessage(error: unknown): string {
