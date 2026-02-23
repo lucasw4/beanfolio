@@ -924,6 +924,9 @@ function App() {
     }
 
     const refs = activeReferencesRef.current;
+    for (let i = 0; i < REFERENCE_COLORS.length; i++) {
+      td.classList.remove(`formula-ref-cell-${i}`);
+    }
     for (const highlight of refs) {
       if (row === highlight.row && column === highlight.col) {
         td.classList.add(`formula-ref-cell-${highlight.colorIndex}`);
@@ -1690,8 +1693,13 @@ function updateFormulaOverlay(
   if (!textarea || !formula || highlights.length === 0) {
     if (overlayRef.current) {
       overlayRef.current.style.display = 'none';
-      textarea?.style.removeProperty('color');
-      textarea?.style.removeProperty('caret-color');
+    }
+    if (textarea) {
+      textarea.style.removeProperty('color');
+      textarea.style.removeProperty('caret-color');
+      textarea.style.removeProperty('background');
+      textarea.style.removeProperty('position');
+      textarea.style.removeProperty('z-index');
     }
     return;
   }
@@ -1755,15 +1763,19 @@ function updateFormulaOverlay(
   overlay.style.pointerEvents = 'none';
   overlay.style.whiteSpace = 'pre';
   overlay.style.overflow = 'hidden';
-  overlay.style.zIndex = '1';
   overlay.style.backgroundColor = cs.backgroundColor || '#fff';
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.textAlign = cs.textAlign;
   overlay.style.boxSizing = cs.boxSizing;
 
+  // Overlay behind textarea so the browser caret remains visible
+  overlay.style.zIndex = '0';
+  textarea.style.position = 'relative';
+  textarea.style.zIndex = '1';
   textarea.style.color = 'transparent';
   textarea.style.caretColor = '#000';
+  textarea.style.background = 'transparent';
 }
 
 function escapeHtml(text: string): string {
