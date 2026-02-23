@@ -1741,14 +1741,14 @@ function updateFormulaOverlay(
 
   overlay.innerHTML = html;
 
-  // Match textarea geometry
+  // Match textarea geometry — use bounding rect for accurate positioning
   const cs = window.getComputedStyle(textarea);
   overlay.style.display = 'block';
   overlay.style.position = 'absolute';
   overlay.style.top = textarea.offsetTop + 'px';
   overlay.style.left = textarea.offsetLeft + 'px';
-  overlay.style.width = cs.width;
-  overlay.style.height = cs.height;
+  overlay.style.width = textarea.offsetWidth + 'px';
+  overlay.style.height = textarea.offsetHeight + 'px';
   overlay.style.font = cs.font;
   overlay.style.padding = cs.padding;
   overlay.style.border = 'none';
@@ -1756,7 +1756,7 @@ function updateFormulaOverlay(
   overlay.style.whiteSpace = 'pre';
   overlay.style.overflow = 'hidden';
   overlay.style.zIndex = '1';
-  overlay.style.backgroundColor = 'transparent';
+  overlay.style.backgroundColor = cs.backgroundColor || '#fff';
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.textAlign = cs.textAlign;

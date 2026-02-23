@@ -872,7 +872,7 @@
 .formula-overlay {
   pointer-events: none;
   user-select: none;
-  color: transparent;
+  color: #000;
 }
 
 .ht_master td.journal-index-cell {
