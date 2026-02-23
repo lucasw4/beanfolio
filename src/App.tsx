@@ -1687,99 +1687,21 @@ function updateFormulaReferences(
 function updateFormulaOverlay(
   overlayRef: MutableRefObject<HTMLDivElement | null>,
   textarea: HTMLTextAreaElement | null | undefined,
-  formula: string | null,
-  highlights: FormulaReferenceHighlight[],
+  _formula: string | null,
+  _highlights: FormulaReferenceHighlight[],
 ): void {
-  if (!textarea || !formula || highlights.length === 0) {
-    if (overlayRef.current) {
-      overlayRef.current.style.display = 'none';
-    }
-    if (textarea) {
-      textarea.style.removeProperty('color');
-      textarea.style.removeProperty('caret-color');
-      textarea.style.removeProperty('background');
-      textarea.style.removeProperty('position');
-      textarea.style.removeProperty('z-index');
-    }
-    return;
+  // Clean up any existing overlay — cell highlights provide the color coding
+  if (overlayRef.current) {
+    overlayRef.current.remove();
+    overlayRef.current = null;
   }
-
-  let overlay = overlayRef.current;
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.className = 'formula-overlay';
-    overlayRef.current = overlay;
+  if (textarea) {
+    textarea.style.removeProperty('color');
+    textarea.style.removeProperty('caret-color');
+    textarea.style.removeProperty('background');
+    textarea.style.removeProperty('position');
+    textarea.style.removeProperty('z-index');
   }
-
-  const parent = textarea.parentElement;
-  if (parent && overlay.parentElement !== parent) {
-    parent.style.position = 'relative';
-    parent.appendChild(overlay);
-  }
-
-  // Build color map from parsed references
-  const parsed = parseFormulaReferences(formula);
-  const colorMap = new Map<string, number>();
-  let nextColor = 0;
-  for (const p of parsed) {
-    const key = `${p.row},${p.col}`;
-    if (!colorMap.has(key)) {
-      colorMap.set(key, nextColor % REFERENCE_COLORS.length);
-      nextColor++;
-    }
-  }
-
-  // Build highlighted HTML
-  let html = '';
-  let lastIndex = 0;
-  for (const p of parsed) {
-    if (p.start > lastIndex) {
-      html += escapeHtml(formula.slice(lastIndex, p.start));
-    }
-    const key = `${p.row},${p.col}`;
-    const ci = colorMap.get(key) ?? 0;
-    html += `<span style="color:${REFERENCE_COLORS[ci].text};font-weight:600">${escapeHtml(p.ref)}</span>`;
-    lastIndex = p.end;
-  }
-  if (lastIndex < formula.length) {
-    html += escapeHtml(formula.slice(lastIndex));
-  }
-  // Trailing space so the overlay matches textarea scrollWidth
-  html += ' ';
-
-  overlay.innerHTML = html;
-
-  // Match textarea geometry
-  const cs = window.getComputedStyle(textarea);
-  overlay.style.display = 'block';
-  overlay.style.position = 'absolute';
-  overlay.style.top = textarea.offsetTop + 'px';
-  overlay.style.left = textarea.offsetLeft + 'px';
-  overlay.style.width = textarea.offsetWidth + 'px';
-  overlay.style.height = textarea.offsetHeight + 'px';
-  overlay.style.font = cs.font;
-  overlay.style.padding = cs.padding;
-  overlay.style.border = 'none';
-  overlay.style.pointerEvents = 'none';
-  overlay.style.whiteSpace = 'pre';
-  overlay.style.overflow = 'visible';
-  overlay.style.backgroundColor = '#fff';
-  overlay.style.lineHeight = cs.lineHeight;
-  overlay.style.letterSpacing = cs.letterSpacing;
-  overlay.style.textAlign = cs.textAlign;
-  overlay.style.boxSizing = cs.boxSizing;
-
-  // Overlay behind textarea so the browser caret remains visible
-  overlay.style.zIndex = '0';
-  textarea.style.position = 'relative';
-  textarea.style.zIndex = '1';
-  textarea.style.color = 'transparent';
-  textarea.style.caretColor = '#000';
-  textarea.style.background = 'transparent';
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function syncFormulaSession(
