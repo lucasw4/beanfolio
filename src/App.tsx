@@ -1698,6 +1698,8 @@ function updateFormulaOverlay(
       textarea.style.removeProperty('color');
       textarea.style.removeProperty('caret-color');
       textarea.style.removeProperty('background');
+      textarea.style.removeProperty('position');
+      textarea.style.removeProperty('z-index');
     }
     return;
   }
@@ -1752,7 +1754,7 @@ function updateFormulaOverlay(
   overlay.style.height = textarea.scrollHeight + 'px';
   overlay.style.font = cs.font;
   overlay.style.padding = cs.padding;
-  overlay.style.border = cs.border;
+  overlay.style.border = 'none';
   overlay.style.boxSizing = cs.boxSizing;
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
@@ -1766,6 +1768,8 @@ function updateFormulaOverlay(
   overlay.style.zIndex = '0';
 
   // Textarea on top: transparent text, visible caret
+  textarea.style.position = 'relative';
+  textarea.style.zIndex = '1';
   textarea.style.color = 'transparent';
   textarea.style.caretColor = '#000';
   textarea.style.background = 'transparent';
