@@ -1746,16 +1746,21 @@ function updateFormulaOverlay(
 
   // Copy every text-affecting property from the textarea
   const cs = window.getComputedStyle(textarea);
+  const borderT = parseFloat(cs.borderTopWidth) || 0;
+  const borderL = parseFloat(cs.borderLeftWidth) || 0;
+  const borderR = parseFloat(cs.borderRightWidth) || 0;
+  const borderB = parseFloat(cs.borderBottomWidth) || 0;
+
   overlay.style.display = 'block';
   overlay.style.position = 'absolute';
-  overlay.style.top = textarea.offsetTop + 'px';
-  overlay.style.left = textarea.offsetLeft + 'px';
-  overlay.style.width = cs.width;
-  overlay.style.height = cs.height;
+  overlay.style.top = (textarea.offsetTop + borderT) + 'px';
+  overlay.style.left = (textarea.offsetLeft + borderL) + 'px';
+  overlay.style.width = (textarea.offsetWidth - borderL - borderR) + 'px';
+  overlay.style.height = (textarea.offsetHeight - borderT - borderB) + 'px';
   overlay.style.font = cs.font;
   overlay.style.padding = cs.padding;
   overlay.style.border = 'none';
-  overlay.style.boxSizing = 'content-box';
+  overlay.style.boxSizing = 'border-box';
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.wordSpacing = cs.wordSpacing;
