@@ -1749,7 +1749,7 @@ function updateFormulaOverlay(
 
   overlay.innerHTML = html;
 
-  // Match textarea geometry — use bounding rect for accurate positioning
+  // Match textarea geometry
   const cs = window.getComputedStyle(textarea);
   overlay.style.display = 'block';
   overlay.style.position = 'absolute';
@@ -1762,8 +1762,8 @@ function updateFormulaOverlay(
   overlay.style.border = 'none';
   overlay.style.pointerEvents = 'none';
   overlay.style.whiteSpace = 'pre';
-  overlay.style.overflow = 'hidden';
-  overlay.style.backgroundColor = cs.backgroundColor || '#fff';
+  overlay.style.overflow = 'visible';
+  overlay.style.backgroundColor = '#fff';
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.textAlign = cs.textAlign;
