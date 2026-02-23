@@ -774,6 +774,7 @@ function App() {
     if (isArrowKey(event.key)) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      (event as any).isImmediatePropagationEnabled = false;
 
       const [nextRow, nextCol] = moveReferenceCursor(
         session.cursorRow,
@@ -2009,8 +2010,8 @@ function getOpenEditorContext(
     return null;
   }
 
-  const input = String(editor.getValue() ?? '');
   const textarea = editor.TEXTAREA;
+  const input = textarea ? textarea.value : String(editor.getValue() ?? '');
   const caretPosition =
     textarea && typeof textarea.selectionStart === 'number'
       ? textarea.selectionStart
