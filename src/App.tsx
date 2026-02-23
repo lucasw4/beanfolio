@@ -90,6 +90,22 @@ const A1_REFERENCE_PART_RE = /^(\$?)([A-Za-z]+)(\$?)(\d+)$/;
 const PALETTE_LIGHTNESS_MIN = -3;
 const PALETTE_LIGHTNESS_MAX = 3;
 
+const REFERENCE_COLORS = [
+  { bg: 'rgba(37, 99, 235, 0.12)', border: '#2563eb', text: '#2563eb' },
+  { bg: 'rgba(220, 38, 38, 0.12)', border: '#dc2626', text: '#dc2626' },
+  { bg: 'rgba(124, 58, 237, 0.12)', border: '#7c3aed', text: '#7c3aed' },
+  { bg: 'rgba(5, 150, 105, 0.12)', border: '#059669', text: '#059669' },
+  { bg: 'rgba(217, 119, 6, 0.12)', border: '#d97706', text: '#d97706' },
+  { bg: 'rgba(219, 39, 119, 0.12)', border: '#db2777', text: '#db2777' },
+] as const;
+
+interface FormulaReferenceHighlight {
+  ref: string;
+  row: number;
+  col: number;
+  colorIndex: number;
+}
+
 const FORMULA_DOCS: FormulaDoc[] = [
   {
     name: 'ABS',
@@ -259,7 +275,8 @@ function App() {
   const hotRef = useRef<any>(null);
   const gridStageRef = useRef<HTMLElement | null>(null);
   const formulaEditSessionRef = useRef<FormulaEditSession | null>(null);
-  const activeReferenceCellRef = useRef<{ row: number; col: number } | null>(null);
+  const activeReferencesRef = useRef<FormulaReferenceHighlight[]>([]);
+  const formulaOverlayRef = useRef<HTMLDivElement | null>(null);
   const [gridData, setGridData] = useState(() => buildPresetGrid('blank'));
   const [gridEpoch, setGridEpoch] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState<PresetType>('blank');
@@ -669,7 +686,8 @@ function App() {
     if (!hot) {
       setFormulaPopup(null);
       formulaEditSessionRef.current = null;
-      setActiveReferenceCell(hotRef, activeReferenceCellRef, null);
+      updateFormulaReferences(hotRef, activeReferencesRef, null);
+      updateFormulaOverlay(formulaOverlayRef, null, null, []);
       return;
     }
 
@@ -678,21 +696,21 @@ function App() {
     if (!editorContext) {
       setFormulaPopup(null);
       formulaEditSessionRef.current = null;
-      setActiveReferenceCell(hotRef, activeReferenceCellRef, null);
+      updateFormulaReferences(hotRef, activeReferencesRef, null);
+      updateFormulaOverlay(formulaOverlayRef, null, null, []);
       return;
     }
 
     if (!isFormulaInput(editorContext.input)) {
-      setActiveReferenceCell(hotRef, activeReferenceCellRef, null);
+      updateFormulaReferences(hotRef, activeReferencesRef, null);
+      updateFormulaOverlay(formulaOverlayRef, editorContext.editor.TEXTAREA, null, []);
       setFormulaPopup(buildFormulaPopupState(editorContext.input, editorContext.caretPosition, gridStageRef.current));
       return;
     }
 
-    const session = syncFormulaSession(formulaEditSessionRef, editorContext);
-    setActiveReferenceCell(hotRef, activeReferenceCellRef, {
-      row: session.cursorRow,
-      col: session.cursorCol,
-    });
+    syncFormulaSession(formulaEditSessionRef, editorContext);
+    updateFormulaReferences(hotRef, activeReferencesRef, editorContext.input);
+    updateFormulaOverlay(formulaOverlayRef, editorContext.editor.TEXTAREA, editorContext.input, activeReferencesRef.current);
 
     setFormulaPopup(buildFormulaPopupState(editorContext.input, editorContext.caretPosition, gridStageRef.current));
   };
@@ -787,16 +805,15 @@ function App() {
       session.cursorCol = nextCol;
       session.lastReferenceInput = 'keyboard';
 
-      setActiveReferenceCell(hotRef, activeReferenceCellRef, { row: nextRow, col: nextCol });
       upsertFormulaReference(editorContext, session, toA1Reference(nextRow, nextCol));
+      updateFormulaReferences(hotRef, activeReferencesRef, String(editorContext.editor.getValue() ?? ''));
       window.requestAnimationFrame(refreshFormulaPopup);
       return;
     }
 
-    if (event.key === ',' && session.lastReferenceInput === 'keyboard') {
+    if (isFormulaOperator(event.key) && session.lastReferenceInput === 'keyboard') {
       session.cursorRow = session.editRow;
       session.cursorCol = session.editCol;
-      setActiveReferenceCell(hotRef, activeReferenceCellRef, null);
     }
 
     if (resetsReferenceRange(event.key)) {
@@ -842,8 +859,8 @@ function App() {
     session.cursorCol = coords.col;
     session.lastReferenceInput = 'mouse';
 
-    setActiveReferenceCell(hotRef, activeReferenceCellRef, { row: coords.row, col: coords.col });
     upsertFormulaReference(editorContext, session, toA1Reference(coords.row, coords.col));
+    updateFormulaReferences(hotRef, activeReferencesRef, String(editorContext.editor.getValue() ?? ''));
     editorContext.editor.focus();
     hot.listen();
     window.requestAnimationFrame(refreshFormulaPopup);
@@ -906,9 +923,12 @@ function App() {
       }
     }
 
-    const activeReference = activeReferenceCellRef.current;
-    if (activeReference && row === activeReference.row && column === activeReference.col) {
-      td.classList.add('formula-ref-cell');
+    const refs = activeReferencesRef.current;
+    for (const highlight of refs) {
+      if (row === highlight.row && column === highlight.col) {
+        td.classList.add(`formula-ref-cell-${highlight.colorIndex}`);
+        break;
+      }
     }
 
     const style = getCellStyle(row, column);
@@ -949,7 +969,8 @@ function App() {
 
     setFormulaPopup(null);
     formulaEditSessionRef.current = null;
-    setActiveReferenceCell(hotRef, activeReferenceCellRef, null);
+    updateFormulaReferences(hotRef, activeReferencesRef, null);
+    updateFormulaOverlay(formulaOverlayRef, null, null, []);
   };
 
   const toggleSidebar = () => {
@@ -1631,19 +1652,122 @@ function isFormulaInput(input: string): boolean {
   return input.trimStart().startsWith('=');
 }
 
-function setActiveReferenceCell(
+function updateFormulaReferences(
   hotRef: MutableRefObject<any>,
-  activeReferenceCellRef: MutableRefObject<{ row: number; col: number } | null>,
-  next: { row: number; col: number } | null,
+  activeReferencesRef: MutableRefObject<FormulaReferenceHighlight[]>,
+  formula: string | null,
 ): void {
-  const previous = activeReferenceCellRef.current;
-
-  if (previous?.row === next?.row && previous?.col === next?.col) {
+  if (!formula) {
+    if (activeReferencesRef.current.length === 0) return;
+    activeReferencesRef.current = [];
+    getHotInstance(hotRef)?.render();
     return;
   }
 
-  activeReferenceCellRef.current = next;
+  const parsed = parseFormulaReferences(formula);
+  const colorMap = new Map<string, number>();
+  let nextColor = 0;
+
+  const highlights: FormulaReferenceHighlight[] = parsed.map((p) => {
+    const key = `${p.row},${p.col}`;
+    if (!colorMap.has(key)) {
+      colorMap.set(key, nextColor % REFERENCE_COLORS.length);
+      nextColor++;
+    }
+    return { ref: p.ref, row: p.row, col: p.col, colorIndex: colorMap.get(key)! };
+  });
+
+  activeReferencesRef.current = highlights;
   getHotInstance(hotRef)?.render();
+}
+
+function updateFormulaOverlay(
+  overlayRef: MutableRefObject<HTMLDivElement | null>,
+  textarea: HTMLTextAreaElement | null | undefined,
+  formula: string | null,
+  highlights: FormulaReferenceHighlight[],
+): void {
+  if (!textarea || !formula || highlights.length === 0) {
+    if (overlayRef.current) {
+      overlayRef.current.style.display = 'none';
+      textarea?.style.removeProperty('color');
+      textarea?.style.removeProperty('caret-color');
+    }
+    return;
+  }
+
+  let overlay = overlayRef.current;
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'formula-overlay';
+    overlayRef.current = overlay;
+  }
+
+  const parent = textarea.parentElement;
+  if (parent && overlay.parentElement !== parent) {
+    parent.style.position = 'relative';
+    parent.appendChild(overlay);
+  }
+
+  // Build color map from parsed references
+  const parsed = parseFormulaReferences(formula);
+  const colorMap = new Map<string, number>();
+  let nextColor = 0;
+  for (const p of parsed) {
+    const key = `${p.row},${p.col}`;
+    if (!colorMap.has(key)) {
+      colorMap.set(key, nextColor % REFERENCE_COLORS.length);
+      nextColor++;
+    }
+  }
+
+  // Build highlighted HTML
+  let html = '';
+  let lastIndex = 0;
+  for (const p of parsed) {
+    if (p.start > lastIndex) {
+      html += escapeHtml(formula.slice(lastIndex, p.start));
+    }
+    const key = `${p.row},${p.col}`;
+    const ci = colorMap.get(key) ?? 0;
+    html += `<span style="color:${REFERENCE_COLORS[ci].text};font-weight:600">${escapeHtml(p.ref)}</span>`;
+    lastIndex = p.end;
+  }
+  if (lastIndex < formula.length) {
+    html += escapeHtml(formula.slice(lastIndex));
+  }
+  // Trailing space so the overlay matches textarea scrollWidth
+  html += ' ';
+
+  overlay.innerHTML = html;
+
+  // Match textarea geometry
+  const cs = window.getComputedStyle(textarea);
+  overlay.style.display = 'block';
+  overlay.style.position = 'absolute';
+  overlay.style.top = textarea.offsetTop + 'px';
+  overlay.style.left = textarea.offsetLeft + 'px';
+  overlay.style.width = cs.width;
+  overlay.style.height = cs.height;
+  overlay.style.font = cs.font;
+  overlay.style.padding = cs.padding;
+  overlay.style.border = 'none';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.whiteSpace = 'pre';
+  overlay.style.overflow = 'hidden';
+  overlay.style.zIndex = '1';
+  overlay.style.backgroundColor = 'transparent';
+  overlay.style.lineHeight = cs.lineHeight;
+  overlay.style.letterSpacing = cs.letterSpacing;
+  overlay.style.textAlign = cs.textAlign;
+  overlay.style.boxSizing = cs.boxSizing;
+
+  textarea.style.color = 'transparent';
+  textarea.style.caretColor = '#000';
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function syncFormulaSession(
@@ -1695,6 +1819,11 @@ function moveReferenceCursor(
 
 function resetsReferenceRange(key: string): boolean {
   return key.length === 1 || key === 'Backspace' || key === 'Delete';
+}
+
+const FORMULA_OPERATORS = new Set(['+', '-', '*', '/', '^', '(', ',']);
+function isFormulaOperator(key: string): boolean {
+  return FORMULA_OPERATORS.has(key);
 }
 
 function upsertFormulaReference(
@@ -1864,6 +1993,43 @@ function toA1Reference(row: number, col: number): string {
 
 function toAbsoluteA1Reference(row: number, col: number): string {
   return `$${columnToLetters(col)}$${row + 1}`;
+}
+
+function lettersToColumnIndex(letters: string): number {
+  let index = 0;
+  for (let i = 0; i < letters.length; i++) {
+    index = index * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return index - 1;
+}
+
+const A1_INLINE_RE = /\$?[A-Za-z]+\$?\d+(?::\$?[A-Za-z]+\$?\d+)?/g;
+
+interface ParsedFormulaRef {
+  ref: string;
+  start: number;
+  end: number;
+  row: number;
+  col: number;
+}
+
+function parseFormulaReferences(input: string): ParsedFormulaRef[] {
+  A1_INLINE_RE.lastIndex = 0;
+  const results: ParsedFormulaRef[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = A1_INLINE_RE.exec(input)) !== null) {
+    const ref = match[0];
+    const mainPart = ref.includes(':') ? ref.split(':')[0] : ref;
+    const parsed = parseA1ReferencePart(mainPart);
+    if (!parsed) continue;
+    const row = parseInt(parsed.row, 10) - 1;
+    const col = lettersToColumnIndex(parsed.column);
+    if (row < 0 || col < 0) continue;
+    results.push({ ref, start: match.index, end: match.index + ref.length, row, col });
+  }
+
+  return results;
 }
 
 function shiftHexColorLightness(color: string, steps: number): string {
