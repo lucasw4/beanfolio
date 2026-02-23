@@ -1750,12 +1750,12 @@ function updateFormulaOverlay(
   overlay.style.position = 'absolute';
   overlay.style.top = textarea.offsetTop + 'px';
   overlay.style.left = textarea.offsetLeft + 'px';
-  overlay.style.width = textarea.scrollWidth + 'px';
-  overlay.style.height = textarea.scrollHeight + 'px';
+  overlay.style.width = cs.width;
+  overlay.style.height = cs.height;
   overlay.style.font = cs.font;
   overlay.style.padding = cs.padding;
   overlay.style.border = 'none';
-  overlay.style.boxSizing = cs.boxSizing;
+  overlay.style.boxSizing = 'content-box';
   overlay.style.lineHeight = cs.lineHeight;
   overlay.style.letterSpacing = cs.letterSpacing;
   overlay.style.wordSpacing = cs.wordSpacing;
