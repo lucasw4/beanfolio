@@ -870,7 +870,9 @@
 }
 
 .formula-overlay {
-  display: none;
+  pointer-events: none;
+  user-select: none;
+  color: #000;
 }
 
 .ht_master td.journal-index-cell {
