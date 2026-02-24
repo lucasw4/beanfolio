@@ -30,6 +30,24 @@ body,
   overflow: hidden;
 }
 
+html.web-landing-mode,
+body.web-landing-mode,
+html.web-landing-mode #root {
+  overflow: auto;
+}
+
+html.web-app-mode,
+body.web-app-mode,
+html.web-app-mode #root {
+  overflow: hidden;
+}
+
+body.web-app-mode {
+  background:
+    radial-gradient(105% 95% at 50% -6%, rgba(25, 52, 95, 0.45) 0%, rgba(8, 10, 16, 0) 60%),
+    linear-gradient(180deg, #070a12 0%, #04060b 100%);
+}
+
 body {
   color: var(--ui-text);
   background: transparent;

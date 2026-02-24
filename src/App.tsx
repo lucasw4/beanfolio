@@ -41,6 +41,11 @@ const GOOGLE_SCOPES = [
 
 const ROW_HEADER_WIDTH = 34;
 const DROPDOWN_TRANSITION_MS = 220;
+const POP_OUT_APP_WIDTH = 500;
+const POP_OUT_APP_HEIGHT = 510;
+const SIDEBAR_WIDTH = 220;
+const POP_OUT_CHROME_WIDTH = 40;
+const POP_OUT_CHROME_HEIGHT = 110;
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -304,11 +309,22 @@ function App() {
   const [presetMenuVisible, setPresetMenuVisible] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
+  const [popOutBlockedMessage, setPopOutBlockedMessage] = useState<string | null>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const roundPopupRef = useRef<HTMLDivElement>(null);
   const presetMenuRef = useRef<HTMLDivElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
   const savedSelectionRef = useRef<Array<[number, number, number, number]>>([]);
+  const isDesktopApp = Boolean(window.beanfolioDesktop?.isDesktop);
+  const isWebPopOutMode = useMemo(() => {
+    if (isDesktopApp) {
+      return false;
+    }
+
+    const search = new URLSearchParams(window.location.search);
+    return search.get('mode') === 'app';
+  }, [isDesktopApp]);
+  const isWebLanding = !isDesktopApp && !isWebPopOutMode;
 
   const closePresetMenu = useCallback(() => {
     setPresetMenuOpen(false);
@@ -409,6 +425,35 @@ function App() {
     const timer = window.setTimeout(() => setSaveMenuVisible(false), DROPDOWN_TRANSITION_MS);
     return () => window.clearTimeout(timer);
   }, [saveMenuOpen]);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+
+    if (isWebLanding) {
+      html.classList.add('web-landing-mode');
+      body.classList.add('web-landing-mode');
+      html.classList.remove('web-app-mode');
+      body.classList.remove('web-app-mode');
+    } else if (isWebPopOutMode) {
+      html.classList.add('web-app-mode');
+      body.classList.add('web-app-mode');
+      html.classList.remove('web-landing-mode');
+      body.classList.remove('web-landing-mode');
+    } else {
+      html.classList.remove('web-landing-mode');
+      body.classList.remove('web-landing-mode');
+      html.classList.remove('web-app-mode');
+      body.classList.remove('web-app-mode');
+    }
+
+    return () => {
+      html.classList.remove('web-landing-mode');
+      body.classList.remove('web-landing-mode');
+      html.classList.remove('web-app-mode');
+      body.classList.remove('web-app-mode');
+    };
+  }, [isWebLanding, isWebPopOutMode]);
 
   const getSelectedRanges = useCallback((): Array<[number, number, number, number]> => {
     return savedSelectionRef.current;
@@ -981,11 +1026,48 @@ function App() {
     setSidebarOpen(next);
     closePresetMenu();
     closeSaveMenu();
-    (window as any).beanfolioDesktop?.setSidebarOpen?.(next);
+    window.beanfolioDesktop?.setSidebarOpen?.(next);
+
+    if (isWebPopOutMode) {
+      const appWidth = next ? POP_OUT_APP_WIDTH + SIDEBAR_WIDTH : POP_OUT_APP_WIDTH;
+      const windowWidth = appWidth + POP_OUT_CHROME_WIDTH;
+      const windowHeight = POP_OUT_APP_HEIGHT + POP_OUT_CHROME_HEIGHT;
+      window.resizeTo(windowWidth, windowHeight);
+    }
   };
 
-  return (
-    <div className="app-shell" data-sidebar-open={sidebarOpen || undefined}>
+  const handleOpenPopOut = useCallback(() => {
+    const width = POP_OUT_APP_WIDTH + POP_OUT_CHROME_WIDTH;
+    const height = POP_OUT_APP_HEIGHT + POP_OUT_CHROME_HEIGHT;
+    const left = Math.max(window.screenX + Math.round((window.outerWidth - width) / 2), 0);
+    const top = Math.max(window.screenY + Math.round((window.outerHeight - height) / 2), 0);
+    const popOutUrl = new URL(window.location.href);
+
+    popOutUrl.searchParams.set('mode', 'app');
+
+    const features = [
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+      'noopener',
+      'noreferrer',
+    ].join(',');
+
+    setPopOutBlockedMessage(null);
+    const popOutWindow = window.open(popOutUrl.toString(), '_blank', features);
+    if (!popOutWindow) {
+      setPopOutBlockedMessage('Your browser blocked the pop-out window. Allow pop-ups and try again.');
+      return;
+    }
+
+    popOutWindow.focus();
+  }, []);
+
+  const appShellClassName = isWebLanding ? 'app-shell app-shell-embedded' : 'app-shell';
+
+  const appContent = (
+    <div className={appShellClassName} data-sidebar-open={sidebarOpen || undefined}>
       <div className="drag-bar">
         <button
           className={sidebarOpen ? 'sidebar-toggle is-open' : 'sidebar-toggle'}
@@ -1540,6 +1622,42 @@ function App() {
             />
           </div>
         </main>
+      </div>
+    </div>
+  );
+
+  if (!isWebLanding) {
+    return appContent;
+  }
+
+  return (
+    <div className="web-shell">
+      <header className="web-hero">
+        <h1 className="web-title">Beanfolio</h1>
+        <p className="web-subtitle">Your mini spreadsheet app for quick calculations</p>
+      </header>
+
+      <div className={sidebarOpen ? 'web-stage is-sidebar-open' : 'web-stage'}>
+        <div className="web-controls">
+          <div className="popout-arrow" aria-hidden="true">
+            <span className="popout-arrow-text">Need a separate window?</span>
+            <svg className="popout-arrow-icon" viewBox="0 0 120 14" fill="none" focusable="false">
+              <path d="M1 7H112" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M105 2L112 7L105 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <button className="popout-button" type="button" onClick={handleOpenPopOut}>
+            Pop Out App
+          </button>
+        </div>
+
+        <div className={sidebarOpen ? 'embedded-app-frame is-sidebar-open' : 'embedded-app-frame'}>
+          {appContent}
+        </div>
+
+        {popOutBlockedMessage ? (
+          <p className="popout-message" role="status">{popOutBlockedMessage}</p>
+        ) : null}
       </div>
     </div>
   );
