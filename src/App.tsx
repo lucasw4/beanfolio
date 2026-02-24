@@ -834,6 +834,14 @@ function App() {
     window.requestAnimationFrame(refreshFormulaPopup);
   }, []);
 
+  const handleAfterScrollHorizontally = useCallback<NonNullable<Handsontable.GridSettings['afterScrollHorizontally']>>(() => {
+    window.requestAnimationFrame(refreshFormulaPopup);
+  }, []);
+
+  const handleAfterScrollVertically = useCallback<NonNullable<Handsontable.GridSettings['afterScrollVertically']>>(() => {
+    window.requestAnimationFrame(refreshFormulaPopup);
+  }, []);
+
   const handleBeforeKeyDown = useCallback<NonNullable<Handsontable.GridSettings['beforeKeyDown']>>((event) => {
     const hot = getHotInstance(hotRef);
     if (!hot) {
@@ -870,9 +878,10 @@ function App() {
       return;
     }
 
-    if (isFormulaOperator(event.key) && session.lastReferenceInput === 'keyboard') {
+    if (isFormulaOperator(event.key) && session.lastReferenceInput !== null) {
       session.cursorRow = session.editRow;
       session.cursorCol = session.editCol;
+      session.lastReferenceInput = null;
     }
 
     if (resetsReferenceRange(event.key)) {
@@ -881,6 +890,23 @@ function App() {
 
     window.requestAnimationFrame(refreshFormulaPopup);
   }, [activeColumnCount]);
+
+  const handleBeforeChange = useCallback<NonNullable<Handsontable.GridSettings['beforeChange']>>((changes) => {
+    if (!changes) {
+      return;
+    }
+
+    for (const change of changes) {
+      if (!change) {
+        continue;
+      }
+
+      const normalizedValue = normalizeEditedCellValue(change[3]);
+      if (normalizedValue !== change[3]) {
+        change[3] = normalizedValue;
+      }
+    }
+  }, []);
 
   const handleBeforeOnCellMouseDown = useCallback<NonNullable<Handsontable.GridSettings['beforeOnCellMouseDown']>>((
     event,
@@ -1653,12 +1679,15 @@ function App() {
                 indicators: false,
               }}
               mergeCells={mergeCells}
+              beforeChange={handleBeforeChange}
               afterBeginEditing={handleAfterBeginEditing}
               beforeKeyDown={handleBeforeKeyDown}
               beforeOnCellMouseDown={handleBeforeOnCellMouseDown}
               beforeRenderer={handleBeforeRenderer}
               afterRenderer={handleAfterRenderer}
               afterSelectionEnd={handleAfterSelectionEnd}
+              afterScrollHorizontally={handleAfterScrollHorizontally}
+              afterScrollVertically={handleAfterScrollVertically}
               afterDeselect={handleAfterDeselect}
               licenseKey="non-commercial-and-evaluation"
             />
@@ -1860,6 +1889,13 @@ function updateFormulaOverlay(
       textarea.style.removeProperty('background');
       textarea.style.removeProperty('position');
       textarea.style.removeProperty('z-index');
+      textarea.style.removeProperty('white-space');
+      textarea.style.removeProperty('overflow-x');
+      textarea.style.removeProperty('overflow-y');
+      textarea.style.removeProperty('word-break');
+      textarea.style.removeProperty('overflow-wrap');
+      delete textarea.dataset.formulaOverlayBg;
+      delete textarea.dataset.formulaOverlayTextColor;
     }
     return;
   }
@@ -1910,13 +1946,23 @@ function updateFormulaOverlay(
   const borderL = parseFloat(cs.borderLeftWidth) || 0;
   const borderR = parseFloat(cs.borderRightWidth) || 0;
   const borderB = parseFloat(cs.borderBottomWidth) || 0;
+  let overlayBackground = textarea.dataset.formulaOverlayBg;
+  if (!overlayBackground) {
+    overlayBackground = cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)'
+      ? cs.backgroundColor
+      : '#ffffff';
+    textarea.dataset.formulaOverlayBg = overlayBackground;
+  }
+  let overlayTextColor = textarea.dataset.formulaOverlayTextColor;
+  if (!overlayTextColor) {
+    overlayTextColor = cs.color && cs.color !== 'rgba(0, 0, 0, 0)'
+      ? cs.color
+      : '#111827';
+    textarea.dataset.formulaOverlayTextColor = overlayTextColor;
+  }
 
   overlay.style.display = 'block';
   overlay.style.position = 'absolute';
-  overlay.style.top = (textarea.offsetTop + borderT) + 'px';
-  overlay.style.left = (textarea.offsetLeft + borderL) + 'px';
-  overlay.style.width = (textarea.offsetWidth - borderL - borderR) + 'px';
-  overlay.style.height = (textarea.offsetHeight - borderT - borderB) + 'px';
   overlay.style.font = cs.font;
   overlay.style.padding = cs.padding;
   overlay.style.border = 'none';
@@ -1926,11 +1972,60 @@ function updateFormulaOverlay(
   overlay.style.wordSpacing = cs.wordSpacing;
   overlay.style.textIndent = cs.textIndent;
   overlay.style.textTransform = cs.textTransform;
-  overlay.style.whiteSpace = cs.whiteSpace;
+  overlay.style.whiteSpace = 'pre';
   overlay.style.overflow = 'hidden';
+  overlay.style.wordBreak = 'normal';
+  overlay.style.overflowWrap = 'normal';
   overlay.style.pointerEvents = 'none';
-  overlay.style.backgroundColor = '#fff';
+  overlay.style.backgroundColor = overlayBackground;
+  overlay.style.color = overlayTextColor;
   overlay.style.zIndex = '0';
+
+  const syncOverlayGeometry = () => {
+    const holderRect = holder?.getBoundingClientRect();
+    const textareaRect = textarea.getBoundingClientRect();
+
+    if (!holderRect) {
+      overlay.style.top = `${textarea.offsetTop + borderT}px`;
+      overlay.style.left = `${textarea.offsetLeft + borderL}px`;
+      overlay.style.width = `${Math.max(textarea.clientWidth, 0)}px`;
+      overlay.style.height = `${Math.max(textarea.clientHeight, 0)}px`;
+      return;
+    }
+
+    overlay.style.top = `${textareaRect.top - holderRect.top + borderT}px`;
+    overlay.style.left = `${textareaRect.left - holderRect.left + borderL}px`;
+    overlay.style.width = `${Math.max(textareaRect.width - borderL - borderR, 0)}px`;
+    overlay.style.height = `${Math.max(textareaRect.height - borderT - borderB, 0)}px`;
+  };
+
+  const syncOverlayScroll = () => {
+    overlay.scrollLeft = textarea.scrollLeft;
+    overlay.scrollTop = textarea.scrollTop;
+  };
+
+  const syncOverlay = () => {
+    syncOverlayGeometry();
+    syncOverlayScroll();
+  };
+
+  syncOverlay();
+
+  // Caret/reference updates can cause deferred textarea layout updates.
+  // Resync on subsequent frames to prevent stale overlay geometry artifacts.
+  queueMicrotask(syncOverlay);
+  window.requestAnimationFrame(() => {
+    if (!overlay.isConnected) {
+      return;
+    }
+    syncOverlay();
+    window.requestAnimationFrame(() => {
+      if (!overlay.isConnected) {
+        return;
+      }
+      syncOverlay();
+    });
+  });
 
   // Textarea on top: transparent text, visible caret
   textarea.style.position = 'relative';
@@ -1938,6 +2033,11 @@ function updateFormulaOverlay(
   textarea.style.color = 'transparent';
   textarea.style.caretColor = '#000';
   textarea.style.background = 'transparent';
+  textarea.style.whiteSpace = 'pre';
+  textarea.style.overflowX = 'hidden';
+  textarea.style.overflowY = 'hidden';
+  textarea.style.wordBreak = 'normal';
+  textarea.style.overflowWrap = 'normal';
 }
 
 function escapeHtml(text: string): string {
@@ -1995,9 +2095,67 @@ function resetsReferenceRange(key: string): boolean {
   return key.length === 1 || key === 'Backspace' || key === 'Delete';
 }
 
-const FORMULA_OPERATORS = new Set(['+', '-', '*', '/', '^', '(', ',']);
+const FORMULA_OPERATORS = new Set(['+', '-', '*', '/', '^', '(', ',', '=']);
 function isFormulaOperator(key: string): boolean {
   return FORMULA_OPERATORS.has(key);
+}
+
+const NON_ASCII_FORMULA_OPERATOR_RE = /[−–—×÷]/g;
+const GROUPED_NUMBER_RE = /^-?\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+const PAREN_NEGATIVE_GROUPED_NUMBER_RE = /^\(\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)$/;
+
+function normalizeFormulaOperators(input: string): string {
+  return input.replace(NON_ASCII_FORMULA_OPERATOR_RE, (operator) => {
+    if (operator === '×') {
+      return '*';
+    }
+
+    if (operator === '÷') {
+      return '/';
+    }
+
+    return '-';
+  });
+}
+
+function tryParseNumericText(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = normalizeFormulaOperators(trimmed);
+  if (PAREN_NEGATIVE_GROUPED_NUMBER_RE.test(normalized)) {
+    const body = normalized.slice(1, -1);
+    const numericText = body.replace(/[$,]/g, '');
+    const parsed = Number(`-${numericText}`);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (!GROUPED_NUMBER_RE.test(normalized)) {
+    return null;
+  }
+
+  const numericText = normalized.replace(/[$,]/g, '');
+  const parsed = Number(numericText);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeEditedCellValue(value: Handsontable.CellValue): Handsontable.CellValue {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  if (isFormulaInput(value)) {
+    return normalizeFormulaOperators(value);
+  }
+
+  if (value.trimStart().startsWith("'")) {
+    return value;
+  }
+
+  const parsed = tryParseNumericText(value);
+  return parsed ?? value;
 }
 
 function upsertFormulaReference(
