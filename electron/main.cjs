@@ -87,6 +87,21 @@ function createMainWindow(startUrl) {
     const targetWidth = isOpen ? BASE_WIDTH + SIDEBAR_WIDTH : BASE_WIDTH;
     win.setSize(targetWidth, currentHeight, true);
   });
+
+  ipcMain.on('set-always-on-top', (event, isPinned) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const pinned = Boolean(isPinned);
+
+    if (pinned) {
+      // Explicit level is more reliable on macOS than relying on defaults.
+      win.setAlwaysOnTop(true, 'floating', 1);
+      win.moveTop();
+      return;
+    }
+
+    win.setAlwaysOnTop(false);
+  });
 }
 
 async function startDesktopStaticServer() {

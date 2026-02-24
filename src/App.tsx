@@ -310,6 +310,8 @@ function App() {
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
   const [popOutBlockedMessage, setPopOutBlockedMessage] = useState<string | null>(null);
+  const [pinHintMessage, setPinHintMessage] = useState<string | null>(null);
+  const [isPinnedOnTop, setIsPinnedOnTop] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const roundPopupRef = useRef<HTMLDivElement>(null);
   const presetMenuRef = useRef<HTMLDivElement>(null);
@@ -454,6 +456,18 @@ function App() {
       body.classList.remove('web-app-mode');
     };
   }, [isWebLanding, isWebPopOutMode]);
+
+  useEffect(() => {
+    if (!pinHintMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPinHintMessage(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timer);
+  }, [pinHintMessage]);
 
   const getSelectedRanges = useCallback((): Array<[number, number, number, number]> => {
     return savedSelectionRef.current;
@@ -1036,6 +1050,18 @@ function App() {
     }
   };
 
+  const toggleAlwaysOnTop = useCallback(() => {
+    if (!isDesktopApp) {
+      setPinHintMessage('Always-on-top is available in the desktop app only.');
+      return;
+    }
+
+    const next = !isPinnedOnTop;
+    setPinHintMessage(null);
+    setIsPinnedOnTop(next);
+    window.beanfolioDesktop?.setAlwaysOnTop?.(next);
+  }, [isDesktopApp, isPinnedOnTop]);
+
   const handleOpenPopOut = useCallback(() => {
     const width = POP_OUT_APP_WIDTH + POP_OUT_CHROME_WIDTH;
     const height = POP_OUT_APP_HEIGHT + POP_OUT_CHROME_HEIGHT;
@@ -1083,6 +1109,22 @@ function App() {
             <span className="sidebar-toggle-line sidebar-toggle-line-3" />
           </span>
         </button>
+        <button
+          className={isPinnedOnTop ? 'pin-toggle is-active' : 'pin-toggle'}
+          type="button"
+          onClick={toggleAlwaysOnTop}
+          aria-pressed={isPinnedOnTop}
+          aria-label={isPinnedOnTop ? 'Disable always-on-top' : 'Enable always-on-top'}
+          title={isDesktopApp
+            ? (isPinnedOnTop ? 'Unpin from top' : 'Pin window on top')
+            : 'Always-on-top works in the desktop app'}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M5.2 2.1h5.6l-.9 3 2.1 2.1v.9H4v-.9l2.1-2.1-.9-3z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+            <path d="M8 8v5.9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          </svg>
+        </button>
+        {pinHintMessage ? <span className="pin-hint">{pinHintMessage}</span> : null}
       </div>
 
       <div className="format-toolbar" role="toolbar" aria-label="Formatting">
