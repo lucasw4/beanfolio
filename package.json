@@ -10,6 +10,7 @@
     "dev:web": "vite",
     "dev:desktop": "concurrently -k \"vite\" \"wait-on tcp:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -b && vite build",
+    "build:pages": "tsc -b && vite build --base=/beanfolio/",
     "desktop:electron": "npm run build && electron .",
     "desktop": "npm run dist:mac:dir && npm run desktop:open",
     "desktop:open": "sh -c 'APP_PATH=$(find release -maxdepth 3 -type d -name \"Beanfolio.app\" | head -n 1); if [ -z \"$APP_PATH\" ]; then echo \"Beanfolio.app not found in release. Run npm run dist:mac:dir first.\"; exit 1; fi; open \"$APP_PATH\"'",

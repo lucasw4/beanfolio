@@ -86,6 +86,19 @@ npm run dev:web
 npm run preview:web
 ```
 
+## Deploy to GitHub Pages
+
+This repo includes a workflow at `.github/workflows/deploy-pages.yml` that builds and deploys from `dist/`.
+
+1. In GitHub repo settings, set **Pages** source to **GitHub Actions**.
+2. Push to `main` (or run the workflow manually).
+3. The workflow uses:
+   - `npm ci`
+   - `npm run build:pages`
+   - deploy `dist/` to Pages
+
+Why this matters: GitHub Pages cannot run Vite/TypeScript directly. It must serve built assets from `dist/`, not `src/main.tsx`.
+
 ## Package macOS App
 
 ```bash
