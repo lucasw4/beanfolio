@@ -1015,6 +1015,15 @@ function App() {
     const session = syncFormulaSession(formulaEditSessionRef, editorContext);
 
     if (isArrowKey(event.key)) {
+      if (!shouldUseArrowForReferenceSelection(event, editorContext.input, editorContext.caretPosition, session)) {
+        event.stopImmediatePropagation();
+        (event as any).isImmediatePropagationEnabled = false;
+        session.lastReferenceInput = null;
+        session.pendingReferenceRange = null;
+        window.requestAnimationFrame(refreshFormulaPopup);
+        return;
+      }
+
       event.preventDefault();
       event.stopImmediatePropagation();
       (event as any).isImmediatePropagationEnabled = false;
@@ -1044,6 +1053,7 @@ function App() {
 
     if (resetsReferenceRange(event.key)) {
       session.pendingReferenceRange = null;
+      session.lastReferenceInput = null;
     }
 
     window.requestAnimationFrame(refreshFormulaPopup);
@@ -2358,6 +2368,54 @@ function resetsReferenceRange(key: string): boolean {
 const FORMULA_OPERATORS = new Set(['+', '-', '*', '/', '^', '(', ',', '=']);
 function isFormulaOperator(key: string): boolean {
   return FORMULA_OPERATORS.has(key);
+}
+
+function isReferenceEntryTriggerChar(char: string): boolean {
+  return isFormulaOperator(char);
+}
+
+function isCaretAtReferenceEntryPoint(input: string, caretPosition: number): boolean {
+  const clampedCaret = clamp(caretPosition, 0, input.length);
+  if (clampedCaret !== input.length) {
+    return false;
+  }
+
+  const formulaStart = input.search(/\S/);
+  if (formulaStart === -1 || input[formulaStart] !== '=') {
+    return false;
+  }
+
+  let index = clampedCaret - 1;
+  while (index >= formulaStart && input[index] === ' ') {
+    index -= 1;
+  }
+
+  if (index < formulaStart) {
+    return false;
+  }
+
+  return isReferenceEntryTriggerChar(input[index]);
+}
+
+function shouldUseArrowForReferenceSelection(
+  event: KeyboardEvent,
+  input: string,
+  caretPosition: number,
+  session: FormulaEditSession,
+): boolean {
+  if (!isArrowKey(event.key)) {
+    return false;
+  }
+
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+
+  if (session.lastReferenceInput !== null && session.pendingReferenceRange !== null) {
+    return true;
+  }
+
+  return isCaretAtReferenceEntryPoint(input, caretPosition);
 }
 
 const NON_ASCII_FORMULA_OPERATOR_RE = /[−–—×÷]/g;
