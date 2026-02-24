@@ -2,7 +2,7 @@
   "name": "beanfolio",
   "productName": "Beanfolio",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {

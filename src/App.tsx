@@ -81,6 +81,9 @@ interface FormulaEditSession {
 }
 
 type ExportFormat = 'csv' | 'tsv' | 'xlsx' | 'ods';
+type BorderPreset = 'all' | 'outer' | 'inner' | 'horizontal' | 'vertical' | 'top' | 'right' | 'bottom' | 'left' | 'clear';
+type BorderLineStyle = 'solid' | 'dashed' | 'dotted' | 'double';
+type BorderLinePreset = 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double';
 
 type OpenEditorContext = {
   editor: Handsontable.editors.BaseEditor & { TEXTAREA?: HTMLTextAreaElement };
@@ -94,6 +97,7 @@ const A1_REFERENCE_TOKEN_RE = /^\$?[A-Za-z]+\$?\d+(?::\$?[A-Za-z]+\$?\d+)?$/;
 const A1_REFERENCE_PART_RE = /^(\$?)([A-Za-z]+)(\$?)(\d+)$/;
 const PALETTE_LIGHTNESS_MIN = -3;
 const PALETTE_LIGHTNESS_MAX = 3;
+const CELL_BORDER_COLOR = '#0f172a';
 
 const REFERENCE_COLORS = [
   { bg: 'rgba(37, 99, 235, 0.12)', border: '#2563eb', text: '#2563eb' },
@@ -276,6 +280,28 @@ const PRESET_OPTIONS: Array<{ value: PresetType; label: string }> = [
   { value: 't_account', label: 'T-Account' },
 ];
 
+const BORDER_PRESET_OPTIONS: Array<{ value: BorderPreset; label: string; title: string }> = [
+  { value: 'all', label: 'All borders', title: 'All borders' },
+  { value: 'inner', label: 'Inner borders', title: 'Inner borders' },
+  { value: 'horizontal', label: 'Inner horizontal borders', title: 'Inner horizontal borders' },
+  { value: 'vertical', label: 'Inner vertical borders', title: 'Inner vertical borders' },
+  { value: 'outer', label: 'Outer borders', title: 'Outer borders' },
+  { value: 'left', label: 'Left border', title: 'Left border' },
+  { value: 'right', label: 'Right border', title: 'Right border' },
+  { value: 'top', label: 'Top border', title: 'Top border' },
+  { value: 'bottom', label: 'Bottom border', title: 'Bottom border' },
+  { value: 'clear', label: 'Clear borders', title: 'Clear borders' },
+];
+
+const BORDER_LINE_OPTIONS: Array<{ value: BorderLinePreset; label: string; width: number; style: BorderLineStyle }> = [
+  { value: 'thin', label: 'Thin', width: 1, style: 'solid' },
+  { value: 'medium', label: 'Medium', width: 2, style: 'solid' },
+  { value: 'thick', label: 'Thick', width: 3, style: 'solid' },
+  { value: 'dashed', label: 'Dashed', width: 1, style: 'dashed' },
+  { value: 'dotted', label: 'Dotted', width: 1, style: 'dotted' },
+  { value: 'double', label: 'Double', width: 3, style: 'double' },
+];
+
 function App() {
   const hotRef = useRef<any>(null);
   const gridStageRef = useRef<HTMLElement | null>(null);
@@ -302,6 +328,9 @@ function App() {
   const [defaultCommas, setDefaultCommas] = useState(true);
 
   const [colorPickerTarget, setColorPickerTarget] = useState<'fill' | 'text' | null>(null);
+  const [borderPopupOpen, setBorderPopupOpen] = useState(false);
+  const [borderLineMenuOpen, setBorderLineMenuOpen] = useState(false);
+  const [borderLinePreset, setBorderLinePreset] = useState<BorderLinePreset>('thin');
   const [fillPaletteLightness, setFillPaletteLightness] = useState(1);
   const [textPaletteLightness, setTextPaletteLightness] = useState(-1);
   const [roundPopupOpen, setRoundPopupOpen] = useState(false);
@@ -313,6 +342,7 @@ function App() {
   const [pinHintMessage, setPinHintMessage] = useState<string | null>(null);
   const [isPinnedOnTop, setIsPinnedOnTop] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  const borderPopupRef = useRef<HTMLDivElement>(null);
   const roundPopupRef = useRef<HTMLDivElement>(null);
   const presetMenuRef = useRef<HTMLDivElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
@@ -390,11 +420,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!colorPickerTarget && !roundPopupOpen && !presetMenuVisible && !saveMenuVisible) return;
+    if (!colorPickerTarget && !borderPopupOpen && !roundPopupOpen && !presetMenuVisible && !saveMenuVisible) return;
 
     const handleClick = (e: MouseEvent) => {
       if (colorPickerTarget && colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
         setColorPickerTarget(null);
+      }
+      if (borderPopupOpen && borderPopupRef.current && !borderPopupRef.current.contains(e.target as Node)) {
+        setBorderPopupOpen(false);
       }
       if (roundPopupOpen && roundPopupRef.current && !roundPopupRef.current.contains(e.target as Node)) {
         setRoundPopupOpen(false);
@@ -408,7 +441,7 @@ function App() {
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [closePresetMenu, closeSaveMenu, colorPickerTarget, presetMenuVisible, roundPopupOpen, saveMenuVisible]);
+  }, [borderPopupOpen, closePresetMenu, closeSaveMenu, colorPickerTarget, presetMenuVisible, roundPopupOpen, saveMenuVisible]);
 
   useEffect(() => {
     if (presetMenuOpen) {
@@ -427,6 +460,14 @@ function App() {
     const timer = window.setTimeout(() => setSaveMenuVisible(false), DROPDOWN_TRANSITION_MS);
     return () => window.clearTimeout(timer);
   }, [saveMenuOpen]);
+
+  useEffect(() => {
+    if (borderPopupOpen) {
+      return;
+    }
+
+    setBorderLineMenuOpen(false);
+  }, [borderPopupOpen]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -523,6 +564,123 @@ function App() {
     setColorPickerTarget(null);
     rerenderGrid();
   }, [forEachSelectedCell, rerenderGrid]);
+
+  const applyBorderPreset = useCallback((preset: BorderPreset) => {
+    const ranges = getSelectedRanges();
+    if (ranges.length === 0) {
+      return;
+    }
+
+    const line = BORDER_LINE_OPTIONS.find((option) => option.value === borderLinePreset) ?? BORDER_LINE_OPTIONS[0];
+    const width = line.width;
+    const borderStyle = line.style;
+
+    for (const [r1, c1, r2, c2] of ranges) {
+      for (let r = r1; r <= r2; r++) {
+        for (let c = c1; c <= c2; c++) {
+          if (preset === 'clear') {
+            setCellStyle(r, c, {
+              borderTop: undefined,
+              borderRight: undefined,
+              borderBottom: undefined,
+              borderLeft: undefined,
+              borderTopStyle: undefined,
+              borderRightStyle: undefined,
+              borderBottomStyle: undefined,
+              borderLeftStyle: undefined,
+            });
+            continue;
+          }
+
+          const patch: Partial<CellStyle> = {};
+          let hasPatch = false;
+
+          if (preset === 'all') {
+            patch.borderTop = width;
+            patch.borderRight = width;
+            patch.borderBottom = width;
+            patch.borderLeft = width;
+            patch.borderTopStyle = borderStyle;
+            patch.borderRightStyle = borderStyle;
+            patch.borderBottomStyle = borderStyle;
+            patch.borderLeftStyle = borderStyle;
+            hasPatch = true;
+          }
+
+          if (preset === 'outer') {
+            if (r === r1) {
+              patch.borderTop = width;
+              patch.borderTopStyle = borderStyle;
+              hasPatch = true;
+            }
+            if (r === r2) {
+              patch.borderBottom = width;
+              patch.borderBottomStyle = borderStyle;
+              hasPatch = true;
+            }
+            if (c === c1) {
+              patch.borderLeft = width;
+              patch.borderLeftStyle = borderStyle;
+              hasPatch = true;
+            }
+            if (c === c2) {
+              patch.borderRight = width;
+              patch.borderRightStyle = borderStyle;
+              hasPatch = true;
+            }
+          }
+
+          if (preset === 'inner' || preset === 'horizontal') {
+            if (r > r1) {
+              patch.borderTop = width;
+              patch.borderTopStyle = borderStyle;
+              hasPatch = true;
+            }
+          }
+
+          if (preset === 'inner' || preset === 'vertical') {
+            if (c > c1) {
+              patch.borderLeft = width;
+              patch.borderLeftStyle = borderStyle;
+              hasPatch = true;
+            }
+          }
+
+          if (preset === 'top' && r === r1) {
+            patch.borderTop = width;
+            patch.borderTopStyle = borderStyle;
+            hasPatch = true;
+          }
+
+          if (preset === 'right' && c === c2) {
+            patch.borderRight = width;
+            patch.borderRightStyle = borderStyle;
+            hasPatch = true;
+          }
+
+          if (preset === 'bottom' && r === r2) {
+            patch.borderBottom = width;
+            patch.borderBottomStyle = borderStyle;
+            hasPatch = true;
+          }
+
+          if (preset === 'left' && c === c1) {
+            patch.borderLeft = width;
+            patch.borderLeftStyle = borderStyle;
+            hasPatch = true;
+          }
+
+          if (hasPatch) {
+            setCellStyle(r, c, patch);
+          }
+        }
+      }
+    }
+
+    setBorderPopupOpen(false);
+    setBorderLineMenuOpen(false);
+    rerenderGrid();
+  }, [borderLinePreset, getSelectedRanges, rerenderGrid]);
 
   const setPaletteLightness = useCallback((target: 'fill' | 'text', nextValue: number) => {
     const clamped = clamp(nextValue, PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX);
@@ -1020,11 +1178,16 @@ function App() {
     }
 
     const style = getCellStyle(row, column);
+    td.style.boxSizing = 'border-box';
     td.style.fontWeight = style?.bold ? '700' : '';
     td.style.fontStyle = style?.italic ? 'italic' : '';
     td.style.textDecoration = style?.underline ? 'underline' : '';
     td.style.backgroundColor = style?.fillColor ?? '';
     td.style.color = style?.textColor ?? '';
+    td.style.borderTop = style?.borderTop ? `${style.borderTop}px ${style.borderTopStyle ?? 'solid'} ${CELL_BORDER_COLOR}` : '';
+    td.style.borderRight = style?.borderRight ? `${style.borderRight}px ${style.borderRightStyle ?? 'solid'} ${CELL_BORDER_COLOR}` : '';
+    td.style.borderBottom = style?.borderBottom ? `${style.borderBottom}px ${style.borderBottomStyle ?? 'solid'} ${CELL_BORDER_COLOR}` : '';
+    td.style.borderLeft = style?.borderLeft ? `${style.borderLeft}px ${style.borderLeftStyle ?? 'solid'} ${CELL_BORDER_COLOR}` : '';
   }, [selectedPreset]);
 
   const handleAfterRenderer = useCallback((
@@ -1193,7 +1356,11 @@ function App() {
               type="button"
               title="Fill color"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setColorPickerTarget(colorPickerTarget === 'fill' ? null : 'fill')}
+              onClick={() => {
+                setBorderPopupOpen(false);
+                setBorderLineMenuOpen(false);
+                setColorPickerTarget(colorPickerTarget === 'fill' ? null : 'fill');
+              }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                 <rect x="1" y="10" width="12" height="3" rx="0.5" fill="currentColor" />
@@ -1266,7 +1433,11 @@ function App() {
               type="button"
               title="Text color"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setColorPickerTarget(colorPickerTarget === 'text' ? null : 'text')}
+              onClick={() => {
+                setBorderPopupOpen(false);
+                setBorderLineMenuOpen(false);
+                setColorPickerTarget(colorPickerTarget === 'text' ? null : 'text');
+              }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                 <rect x="1" y="11" width="12" height="2" rx="0.5" fill="currentColor" />
@@ -1329,6 +1500,95 @@ function App() {
                 >
                   Clear
                 </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="color-picker-anchor" ref={borderPopupRef}>
+            <button
+              className={borderPopupOpen ? 'fmt-btn fmt-btn-border is-active' : 'fmt-btn fmt-btn-border'}
+              type="button"
+              title="Cell borders"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setColorPickerTarget(null);
+                setBorderPopupOpen((open) => {
+                  if (open) {
+                    setBorderLineMenuOpen(false);
+                  }
+                  return !open;
+                });
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <rect x="1.5" y="1.5" width="11" height="11" rx="0.8" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M1.5 7h11M7 1.5v11" stroke="currentColor" strokeWidth="1.1" />
+              </svg>
+            </button>
+            {borderPopupOpen ? (
+              <div className="color-picker-popup border-picker-popup">
+                <div className="border-picker-layout">
+                  <div className="border-option-grid">
+                    {BORDER_PRESET_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        className={option.value === 'clear' ? 'border-option is-clear' : 'border-option'}
+                        type="button"
+                        aria-label={option.label}
+                        title={option.title}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => applyBorderPreset(option.value)}
+                      >
+                        {renderBorderPresetIcon(option.value)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-line-side">
+                    <div className="border-line-picker">
+                      <button
+                        className={borderLineMenuOpen ? 'border-line-trigger is-open' : 'border-line-trigger'}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => setBorderLineMenuOpen((open) => !open)}
+                        aria-haspopup="menu"
+                        aria-expanded={borderLineMenuOpen}
+                        aria-label="Border line style"
+                      >
+                        <span className="border-line-trigger-icons" aria-hidden="true">
+                          {renderBorderLineStyleIcon()}
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                            <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                      </button>
+                      {borderLineMenuOpen ? (
+                        <div className="border-line-menu" role="menu" aria-label="Border line styles">
+                          {BORDER_LINE_OPTIONS.map((lineOption) => {
+                            const isSelected = lineOption.value === borderLinePreset;
+                            return (
+                              <button
+                                key={lineOption.value}
+                                className={isSelected ? 'border-line-option is-selected' : 'border-line-option'}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={isSelected}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setBorderLinePreset(lineOption.value);
+                                  setBorderLineMenuOpen(false);
+                                }}
+                              >
+                                <span className="border-line-check" aria-hidden="true">{isSelected ? '✓' : ''}</span>
+                                <span className={`border-line-sample border-line-sample-${lineOption.value}`} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -2542,6 +2802,103 @@ function formatFormulaSignature(doc: FormulaDoc): string {
 function getPresetOptionLabel(preset: PresetType): string {
   const option = PRESET_OPTIONS.find((item) => item.value === preset);
   return option?.label ?? 'Preset';
+}
+
+function renderBorderPresetIcon(preset: BorderPreset): JSX.Element {
+  if (preset === 'all') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2 8H14M8 2V14" stroke="currentColor" strokeWidth="1.1" />
+      </svg>
+    );
+  }
+
+  if (preset === 'inner') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M2 8H14M8 2V14" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (preset === 'horizontal') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M2 6H14M2 10H14" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (preset === 'vertical') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M6 2V14M10 2V14" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (preset === 'outer') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    );
+  }
+
+  if (preset === 'left') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M2 2V14" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  if (preset === 'right') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M14 2V14" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  if (preset === 'top') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M2 2H14" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  if (preset === 'bottom') {
+    return (
+      <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" opacity="0.65" />
+        <path d="M2 14H14" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="border-preset-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.4 1.4" />
+    </svg>
+  );
+}
+
+function renderBorderLineStyleIcon(): JSX.Element {
+  return (
+    <svg className="border-line-style-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 3H14M2 6H14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M2 10H14M2 13H14" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeDasharray="1.2 1.2" />
+    </svg>
+  );
 }
 
 function buildSnapshot(hot: Handsontable, columnCount: number): CellSnapshot[][] {

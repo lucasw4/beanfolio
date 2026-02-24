@@ -3,9 +3,19 @@
 Beanfolio is a lightweight spreadsheet app for accounting and finance students.
 It runs as a macOS desktop app (Electron), and can append your work to a Google Sheets archive.
 
-## Screenshot
+## Screenshots
+
+### App
 
 ![Beanfolio app screenshot](docs/beanfolio-screenshot.png)
+
+### Full Screen (macOS)
+
+![Beanfolio full-screen macOS screenshot](docs/beanfolio-fs-mac-ss.png)
+
+### Website
+
+![Beanfolio website screenshot](docs/beanfolio-website-ss.png)
 
 ## What It Does
 

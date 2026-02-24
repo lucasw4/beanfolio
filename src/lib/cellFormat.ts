@@ -6,6 +6,14 @@ export interface CellStyle {
   textColor?: string;
   commaOff?: boolean;
   percent?: boolean;
+  borderTop?: number;
+  borderRight?: number;
+  borderBottom?: number;
+  borderLeft?: number;
+  borderTopStyle?: 'solid' | 'dashed' | 'dotted' | 'double';
+  borderRightStyle?: 'solid' | 'dashed' | 'dotted' | 'double';
+  borderBottomStyle?: 'solid' | 'dashed' | 'dotted' | 'double';
+  borderLeftStyle?: 'solid' | 'dashed' | 'dotted' | 'double';
 }
 
 type CellKey = string;
@@ -26,7 +34,9 @@ export function setCellStyle(row: number, col: number, patch: Partial<CellStyle>
   const merged = { ...existing, ...patch };
 
   const isEmpty = !merged.bold && !merged.italic && !merged.underline
-    && !merged.fillColor && !merged.textColor && !merged.commaOff && !merged.percent;
+    && !merged.fillColor && !merged.textColor && !merged.commaOff && !merged.percent
+    && !merged.borderTop && !merged.borderRight && !merged.borderBottom && !merged.borderLeft
+    && !merged.borderTopStyle && !merged.borderRightStyle && !merged.borderBottomStyle && !merged.borderLeftStyle;
 
   if (isEmpty) {
     store.delete(k);
