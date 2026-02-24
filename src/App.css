@@ -1308,7 +1308,7 @@
 }
 
 .handsontable .htCore td {
-  box-sizing: border-box !important;
+  vertical-align: middle !important;
 }
 
 .handsontable .ht_clone_top th,
@@ -1320,21 +1320,22 @@
 
 .handsontable .ht_clone_left th,
 .handsontable .ht_clone_inline_start tbody th {
-  line-height: 22px !important;
-  height: 22px !important;
   padding: 0 !important;
   vertical-align: middle !important;
 }
 
-.handsontable .ht_clone_top_inline_start_corner thead th,
-.handsontable .ht_clone_inline_start thead th {
-  height: 22px !important;
+.handsontable .ht_master tbody td .relative,
+.handsontable .ht_clone_left tbody th .relative,
+.handsontable .ht_clone_inline_start tbody th .relative {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
 }
 
-.handsontable .ht_clone_top_inline_start_corner thead th .relative,
-.handsontable .ht_clone_inline_start thead th .relative {
-  padding: 0 4px !important;
-  line-height: 22px !important;
+.handsontable .ht_clone_left tbody th .relative,
+.handsontable .ht_clone_inline_start tbody th .relative {
+  justify-content: center;
+  width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

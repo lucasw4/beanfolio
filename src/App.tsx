@@ -1178,7 +1178,7 @@ function App() {
     }
 
     const style = getCellStyle(row, column);
-    td.style.boxSizing = 'border-box';
+    td.style.verticalAlign = 'middle';
     td.style.fontWeight = style?.bold ? '700' : '';
     td.style.fontStyle = style?.italic ? 'italic' : '';
     td.style.textDecoration = style?.underline ? 'underline' : '';
